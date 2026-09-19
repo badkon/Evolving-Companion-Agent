@@ -1,0 +1,71 @@
+# ============================================================
+# Evolving-Companion-Agent
+# ============================================================
+
+# --- Secrets & environment variables ---
+.env
+.env.*
+!.env.example
+
+# --- Character runtime data ---
+# Memories, personality states, relationship states,
+# world states and other private runtime data must never enter Git.
+character-data/
+runtime-data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# --- Logs & temporary files ---
+logs/
+*.log
+tmp/
+temp/
+.cache/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Node.js / TypeScript ---
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# --- Tauri / Rust ---
+target/
+
+# --- IDE ---
+.idea/
+
+# VS Code local-only settings
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# --- OS generated files ---
+.DS_Store
+.AppleDouble
+Thumbs.db
+Desktop.ini
+
+# --- Local backups ---
+*.bak
+*.tmp
+*.swp
+*~
