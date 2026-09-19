@@ -10,12 +10,17 @@
 - `CONTRIBUTING.md`：开发规范；
 - `docs/vision.md`：项目目标与长期方向；
 - `docs/architecture.md`：当前架构；
-- `docs/character-constitution.md`：Character 身份、人格与演化原则；
+- `docs/character-constitution.md`：Character 的存在本体与核心价值；
+- `docs/identity.md`：Character 的身份结构、身份连续性与身份历史；
 - `docs/system-governance.md`：系统与开发者权限。
 
-涉及 Character 行为、人格、记忆、关系、兴趣、自主性或长期状态时，必须阅读 Character Constitution。
+涉及 Character 的存在本体、核心价值或 Constitution Boundary 时，必须阅读 Character Constitution。
 
-涉及权限、隐私、数据控制、备份、迁移或开发者操作时，必须阅读 System Governance。
+涉及 Character 身份、命名、身份连续性、生命周期、迁移或身份历史时，必须阅读 Character Identity。
+
+涉及权限、隐私、数据控制、备份、开发者操作或系统治理时，必须阅读 System Governance。
+
+涉及人格、记忆、关系、兴趣、信念、情绪、目标、认知或其他长期心理状态时，应同时检查相关设计文档。若对应设计文档尚未建立，不得自行将这些内容扩展进 Character Constitution 或 Identity。
 
 ## Design Authority
 
