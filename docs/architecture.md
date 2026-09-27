@@ -6,6 +6,15 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
+## 当前工程状态 — A0
+
+A0 — Project Organization 已建立 Python >= 3.12 工程底座：使用 `src` layout，
+包名为 `evolving_companion`，通过 setuptools 和标准 pip 安装。
+运行时依赖为空；开发依赖为 pytest 和 Ruff，GitHub Actions 在 Python 3.12 上执行安装、静态检查、格式检查和 import 测试。
+
+当前没有应用入口、Character runtime、LLM 接入或持久化实现。
+下文的 Client、Character Core、Character Store 及 SQLite 等内容仍属于架构方向，尚未实现。
+
 ## 1. 核心分层
 
 项目遵循以下基本原则：
