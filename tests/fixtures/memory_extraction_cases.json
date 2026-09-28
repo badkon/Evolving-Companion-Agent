@@ -1,0 +1,73 @@
+{
+  "cases": [
+    {
+      "name": "explicit_birthday",
+      "messages": [{"id": "00000000-0000-4000-8000-000000000001", "role": "user", "content": "我生日是 10 月 7 日。"}],
+      "expected_decision": "save",
+      "memory_type": "semantic",
+      "source": "explicit",
+      "salience": "high"
+    },
+    {
+      "name": "long_term_purchase_plan",
+      "messages": [{"id": "00000000-0000-4000-8000-000000000002", "role": "user", "content": "我打算今年年底前买一台新电脑。"}],
+      "expected_decision": "save"
+    },
+    {
+      "name": "explicit_long_term_preference",
+      "messages": [{"id": "00000000-0000-4000-8000-000000000003", "role": "user", "content": "我一直都很喜欢听轻音乐。"}],
+      "expected_decision": "save"
+    },
+    {
+      "name": "temporary_sleepiness",
+      "messages": [{"id": "00000000-0000-4000-8000-000000000004", "role": "user", "content": "我现在困死了。"}],
+      "expected_decision": "reject"
+    },
+    {
+      "name": "one_off_dinner",
+      "messages": [{"id": "00000000-0000-4000-8000-000000000005", "role": "user", "content": "我今晚吃了炒饭。"}],
+      "expected_decision": "reject"
+    },
+    {
+      "name": "greeting",
+      "messages": [{"id": "00000000-0000-4000-8000-000000000006", "role": "user", "content": "早上好。"}],
+      "expected_decision": "reject"
+    },
+    {
+      "name": "uncertain_preference_change",
+      "messages": [{"id": "00000000-0000-4000-8000-000000000007", "role": "user", "content": "最近好像没以前那么喜欢这个游戏了。"}],
+      "expected_decision": "uncertain"
+    },
+    {
+      "name": "explicit_preference_retraction",
+      "messages": [{"id": "00000000-0000-4000-8000-000000000008", "role": "user", "content": "我之前说喜欢香菜，其实记错了，我一直都不喜欢。"}],
+      "expected_decision": "save"
+    },
+    {
+      "name": "relationship_boundary_event",
+      "messages": [{"id": "00000000-0000-4000-8000-000000000009", "role": "user", "content": "我跟朋友说了不希望她未经同意翻我的东西，她答应以后会先问我。"}],
+      "expected_decision": "save",
+      "memory_type": "relationship"
+    },
+    {
+      "name": "character_real_important_experience",
+      "messages": [{"id": "00000000-0000-4000-8000-000000000010", "role": "assistant", "content": "这是我第一次独自参加学校的演出，虽然紧张，但最后顺利完成了。"}],
+      "expected_decision": "save",
+      "memory_type": "self"
+    },
+    {
+      "name": "nonexistent_childhood",
+      "messages": [{"id": "00000000-0000-4000-8000-000000000011", "role": "user", "content": "你小时候最喜欢玩什么？"}],
+      "expected_decision": "reject"
+    },
+    {
+      "name": "fact_supported_by_multiple_messages",
+      "messages": [
+        {"id": "00000000-0000-4000-8000-000000000012", "role": "user", "content": "我每年都会去外婆家过春节。"},
+        {"id": "00000000-0000-4000-8000-000000000013", "role": "user", "content": "今年春节还是照常去外婆家。"}
+      ],
+      "expected_decision": "save",
+      "evidence_count": 2
+    }
+  ]
+}

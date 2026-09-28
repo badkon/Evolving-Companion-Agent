@@ -1,6 +1,8 @@
 """SQLite archive and explicit memory storage for the current Character."""
 
 import sqlite3
+import unicodedata
+from collections.abc import Sequence
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -66,6 +68,11 @@ def _require_content(content: str) -> None:
         raise ValueError("content must not be empty")
 
 
+def _normalize_content(content: str) -> str:
+    normalized = unicodedata.normalize("NFKC", content)
+    return " ".join(normalized.split()).casefold()
+
+
 @dataclass(frozen=True)
 class MemoryRecord:
     id: str
@@ -126,8 +133,9 @@ class SQLiteStore:
         salience: str,
         status: str = "active",
         supersedes_memory_id: str | None = None,
+        evidence_refs: Sequence[str] = (),
     ) -> MemoryRecord:
-        """Save an explicitly supplied memory; conversation turns never call this."""
+        """Save an explicitly gated memory with optional archive evidence."""
         _require_choice(memory_type, MEMORY_TYPES, "memory_type")
         _require_content(content)
         _require_choice(source, MEMORY_SOURCES, "source")
@@ -135,6 +143,8 @@ class SQLiteStore:
         _require_choice(status, MEMORY_STATUSES, "status")
         if supersedes_memory_id is not None:
             _require_uuid(supersedes_memory_id, "supersedes_memory_id")
+        for evidence_ref in evidence_refs:
+            _require_uuid(evidence_ref, "evidence_ref")
         record = MemoryRecord(
             id=str(uuid4()),
             memory_type=memory_type,
@@ -147,6 +157,14 @@ class SQLiteStore:
             supersedes_memory_id=supersedes_memory_id,
         )
         with closing(self._connect()) as connection, connection:
+            for evidence_ref in evidence_refs:
+                archive_row = connection.execute(
+                    "SELECT 1 FROM archive_messages WHERE id = ?", (evidence_ref,)
+                ).fetchone()
+                if archive_row is None:
+                    raise ValueError(
+                        "archive evidence must reference an existing message"
+                    )
             connection.execute(
                 """INSERT INTO memories
                    (id, memory_type, content, source, salience, status,
@@ -164,7 +182,24 @@ class SQLiteStore:
                     record.supersedes_memory_id,
                 ),
             )
+            connection.executemany(
+                """INSERT INTO memory_evidence
+                   (memory_id, evidence_kind, evidence_ref) VALUES (?, ?, ?)""",
+                [
+                    (record.id, "archive_message", evidence_ref)
+                    for evidence_ref in evidence_refs
+                ],
+            )
         return record
+
+    def has_active_memory_content(self, content: str) -> bool:
+        """Check exact or whitespace/Unicode-normalized active content."""
+        target = _normalize_content(content)
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT content FROM memories WHERE status = 'active'"
+            ).fetchall()
+        return any(_normalize_content(row["content"]) == target for row in rows)
 
     def get_memory(self, memory_id: str) -> MemoryRecord | None:
         with closing(self._connect()) as connection:
