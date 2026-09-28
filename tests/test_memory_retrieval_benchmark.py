@@ -1,4 +1,7 @@
-from scripts.run_memory_retrieval_benchmark import calculate_metrics, load_cases
+from evolving_companion.memory_retrieval_benchmark import (
+    calculate_metrics,
+    load_cases,
+)
 
 
 def test_retrieval_fixture_has_valid_ids_and_expected_size() -> None:
