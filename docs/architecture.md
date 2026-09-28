@@ -6,14 +6,14 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — A0
+## 当前工程状态 — A1
 
-A0 — Project Organization 已建立 Python >= 3.12 工程底座：使用 `src` layout，
-包名为 `evolving_companion`，通过 setuptools 和标准 pip 安装。
-运行时依赖为空；开发依赖为 pytest 和 Ruff，GitHub Actions 在 Python 3.12 上执行安装、静态检查、格式检查和 import 测试。
+项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
+A1 提供 CLI、多轮内存会话和一个精简 CharacterProfile；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
+API Key 从 `DEEPSEEK_API_KEY` 环境变量读取。运行时依赖为 openai，开发依赖为 pytest 和 Ruff。
 
-当前没有应用入口、Character runtime、LLM 接入或持久化实现。
-下文的 Client、Character Core、Character Store 及 SQLite 等内容仍属于架构方向，尚未实现。
+会话历史只在进程内存中保存。当前没有长期记忆、Character Data 持久化、数据库、World/NPC 模拟或自主行为。
+下文的 Character Store、SQLite 和多设备服务仍属于架构方向，尚未实现。
 
 ## 1. 核心分层
 

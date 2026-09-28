@@ -4,14 +4,13 @@
 
 ## 当前状态
 
-- 开发阶段：**A0 — Project Organization**。
+- 开发阶段：**A1 — Minimal Character Conversation**。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
 
-当前仅具备最小 Python 工程底座：可安装的包、import 测试、Ruff 检查和 GitHub Actions CI。
-尚未实现可用的 Character、对话运行时、记忆、自主行为或世界模拟，也没有应用启动入口。
-下一阶段为 A1 — Minimal Character Conversation。
+当前提供通过 DeepSeek API 进行多轮 CLI 对话的最小原型。会话历史只保存在进程内存中，退出后清空。
+尚未实现长期记忆、持久化 Character Data、自主行为或世界模拟。
 
 ## 开发环境
 
@@ -55,7 +54,25 @@ ruff format --check .
 ```
 
 Python import 包名为 `evolving_companion`，源码位于 `src/evolving_companion/`。
-A0 无运行时依赖；开发依赖仅为 pytest 和 Ruff。CI 在 Python 3.12 上执行相同的安装与检查步骤。
+A1 使用 OpenAI Python SDK 作为 DeepSeek OpenAI-compatible API 的通信客户端；运行时依赖为 `openai`，开发依赖为 pytest 和 Ruff。CI 在 Python 3.12 上执行相同的安装与检查步骤。
+
+设置 `DEEPSEEK_API_KEY` 环境变量后启动 CLI：
+
+Windows PowerShell：
+
+```powershell
+$env:DEEPSEEK_API_KEY = "your-api-key"
+python -m evolving_companion.cli
+```
+
+macOS / Linux：
+
+```bash
+export DEEPSEEK_API_KEY="your-api-key"
+python -m evolving_companion.cli
+```
+
+输入 `/exit` 退出。API Key 不应写入仓库或打印到终端日志。
 
 ## 设计文档
 
