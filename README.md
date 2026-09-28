@@ -4,13 +4,14 @@
 
 ## 当前状态
 
-- 开发阶段：**A2 v0.1 — Character Data 与 LLM Prompt 解耦**。
+- 开发阶段：**A3.1 — Conversation Archive、SQLite Memory Store 与 Evidence Chain 基础**。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
 
-当前提供通过 DeepSeek API 进行多轮 CLI 对话的最小原型。SI-001 的 Seed Character Data 由 `data/characters/si_001.yaml` 唯一维护，经 Pydantic 校验和 Character Projection 后传给 PromptBuilder。会话历史只保存在进程内存中，退出后清空。
-尚未实现长期记忆、持久化 Character Data、自主行为或世界模拟。
+当前提供通过 DeepSeek API 进行多轮 CLI 对话的最小原型。SI-001 的 Seed Character Data 由 `data/characters/si_001.yaml` 唯一维护，经 Pydantic 校验和 Character Projection 后传给 PromptBuilder。
+A3.1 将原始对话立即归档到默认的 `runtime/si_001.db`，并建立 SQLite Memory Store 与 Evidence Chain 的显式存储 API。当前会话的 Prompt History 仍只保存在内存中，退出后清空。Archive 是系统原始记录，不自动成为 Character Memory 或 Character Knowledge。
+尚未实现自动记忆形成、提取、检索、整合、自主行为或世界模拟。
 
 ## 开发环境
 

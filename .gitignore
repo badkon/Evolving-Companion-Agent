@@ -12,6 +12,7 @@
 # world states and other private runtime data must never enter Git.
 character-data/
 runtime-data/
+runtime/
 *.db
 *.db-shm
 *.db-wal

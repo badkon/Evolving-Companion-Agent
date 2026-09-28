@@ -8,6 +8,7 @@ from evolving_companion.character_projection import (
 )
 from evolving_companion.conversation import Conversation
 from evolving_companion.prompting import PromptBuilder
+from evolving_companion.storage import SQLiteStore
 
 
 class FakeLLMClient:
@@ -85,7 +86,7 @@ def test_system_instructions_support_variable_lively_dialogue() -> None:
     system_content = PromptBuilder(load_projected_character()).build([], "测试")[0][
         "content"
     ]
-    system_instructions = system_content.split("【身份】", maxsplit=1)[0]
+    system_instructions = system_content.split("【关于玲】", maxsplit=1)[0]
 
     assert "不要求固定长短" in system_instructions
     assert "不必逐点回应" in system_instructions
@@ -100,9 +101,13 @@ def test_system_instructions_support_variable_lively_dialogue() -> None:
     assert "默认吐槽" not in system_instructions
 
 
-def test_conversation_appends_successful_turns_in_order_in_memory() -> None:
+def test_conversation_appends_successful_turns_in_order_in_memory(
+    tmp_path: Path,
+) -> None:
     llm_client = FakeLLMClient(["你好呀。", "我喜欢看故事。"])
-    conversation = Conversation(llm_client, load_projected_character())
+    conversation = Conversation(
+        llm_client, load_projected_character(), SQLiteStore(tmp_path / "archive.db")
+    )
 
     assert conversation.history == ()
     assert conversation.send("你好") == "你好呀。"
@@ -127,12 +132,16 @@ def test_conversation_appends_successful_turns_in_order_in_memory() -> None:
     ]
 
 
-def test_failed_llm_request_does_not_append_history() -> None:
+def test_failed_llm_request_does_not_append_history(tmp_path: Path) -> None:
     class FailingClient:
         def complete(self, messages: list[Mapping[str, str]]) -> str:
             raise RuntimeError("provider unavailable")
 
-    conversation = Conversation(FailingClient(), load_projected_character())
+    conversation = Conversation(
+        FailingClient(),
+        load_projected_character(),
+        SQLiteStore(tmp_path / "archive.db"),
+    )
 
     try:
         conversation.send("你好")

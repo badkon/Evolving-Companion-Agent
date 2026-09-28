@@ -6,15 +6,15 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — A2 v0.1
+## 当前工程状态 — A3.1
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
 A2 v0.1 将初始 Seed Character Data 独立存放在 `data/characters/si_001.yaml`，数据路径为 YAML → Pydantic validation → Character Projection → PromptBuilder → LLM。
+A3.1 使用标准库 sqlite3 在 `runtime/si_001.db` 立即保存原始 Conversation Archive，并建立 `memories` 与 `memory_evidence` 表和显式读写 API。Archive 属于系统记录；Memory 需要单独创建，不能因为消息已归档就视为 Character Knowledge。当前 Prompt History 仍只在内存中。
 API Key 从 `DEEPSEEK_API_KEY` 环境变量读取。运行时依赖为 openai、pydantic 和 PyYAML，开发依赖为 pytest 和 Ruff。
 
-会话历史只在进程内存中保存。当前没有长期记忆、Character Data 持久化、数据库、World/NPC 模拟或自主行为。
-下文的 Character Store、SQLite 和多设备服务仍属于架构方向，尚未实现。
+当前没有自动记忆形成、提取、检索或整合；也没有 World/NPC 模拟或自主行为。下文的完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
 
 ## 1. 核心分层
 
@@ -87,7 +87,7 @@ Runtime Data 不进入 Git。
 
 ## 5. 存储
 
-当前计划优先使用 SQLite 作为早期 Character Store。
+当前使用 SQLite 保存对话原始记录及显式创建的 Memory；完整 Character Store 尚未实现。
 
 上层模块不应直接依赖具体数据库实现，应通过统一的数据访问边界访问 Character State。
 
