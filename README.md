@@ -12,6 +12,7 @@
 当前提供通过 DeepSeek API 进行多轮 CLI 对话的最小原型。SI-001 的 Seed Character Data 由 `data/characters/si_001.yaml` 唯一维护，经 Pydantic 校验和 Character Projection 后传给 PromptBuilder。
 A3.1 将原始对话立即归档到默认的 `runtime/si_001.db`，并建立 SQLite Memory Store 与 Evidence Chain 的显式存储 API。当前会话的 Prompt History 仍只保存在内存中，退出后清空。Archive 是系统原始记录，不自动成为 Character Memory 或 Character Knowledge。
 A3.2a 提供对给定 Conversation Chunk 执行一次结构化 Memory Extraction、证据校验及保存 Gate 的接口。A3.2b 提供独立的本地向量检索 API，但尚未接入 Conversation 或 Prompt。`memories` 与 `memory_evidence` 是权威 Memory 数据；`memory_embeddings` 是可删除并重建的派生索引。当前尚未实现自动 Memory Retrieval 接入、Consolidation、自主行为或世界模拟。
+A3.2c 的 rerank runner 是离线实验工具，仅对生产 Retriever 给出的 semantic Top-10 候选进行轻量实验重排，不改变 Production MemoryRetriever。
 
 ## 开发环境
 
