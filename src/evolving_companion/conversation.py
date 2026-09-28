@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from typing import Protocol
 
-from evolving_companion.character import CharacterProfile
+from evolving_companion.character_projection import ProjectedCharacterContext
 from evolving_companion.prompting import Message, PromptBuilder
 
 
@@ -19,10 +19,10 @@ class Conversation:
     def __init__(
         self,
         llm_client: TextCompletionClient,
-        profile: CharacterProfile | None = None,
+        character_context: ProjectedCharacterContext,
     ) -> None:
         self._llm_client = llm_client
-        self._prompt_builder = PromptBuilder(profile or CharacterProfile())
+        self._prompt_builder = PromptBuilder(character_context)
         self._history: list[Message] = []
 
     @property

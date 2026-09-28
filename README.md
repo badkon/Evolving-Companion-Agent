@@ -4,12 +4,12 @@
 
 ## 当前状态
 
-- 开发阶段：**A1 — Minimal Character Conversation**。
+- 开发阶段：**A2 v0.1 — Character Data 与 LLM Prompt 解耦**。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
 
-当前提供通过 DeepSeek API 进行多轮 CLI 对话的最小原型。会话历史只保存在进程内存中，退出后清空。
+当前提供通过 DeepSeek API 进行多轮 CLI 对话的最小原型。SI-001 的 Seed Character Data 由 `data/characters/si_001.yaml` 唯一维护，经 Pydantic 校验和 Character Projection 后传给 PromptBuilder。会话历史只保存在进程内存中，退出后清空。
 尚未实现长期记忆、持久化 Character Data、自主行为或世界模拟。
 
 ## 开发环境
@@ -54,7 +54,7 @@ ruff format --check .
 ```
 
 Python import 包名为 `evolving_companion`，源码位于 `src/evolving_companion/`。
-A1 使用 OpenAI Python SDK 作为 DeepSeek OpenAI-compatible API 的通信客户端；运行时依赖为 `openai`，开发依赖为 pytest 和 Ruff。CI 在 Python 3.12 上执行相同的安装与检查步骤。
+A1 使用 OpenAI Python SDK 作为 DeepSeek OpenAI-compatible API 的通信客户端；A2 使用 Pydantic 校验 Seed Data、PyYAML 读取 YAML。运行时依赖为 `openai`、`pydantic` 和 `PyYAML`，开发依赖为 pytest 和 Ruff。CI 在 Python 3.12 上执行相同的安装与检查步骤。
 
 设置 `DEEPSEEK_API_KEY` 环境变量后启动 CLI：
 

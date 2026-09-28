@@ -1,6 +1,11 @@
 from collections.abc import Mapping
+from pathlib import Path
 
-from evolving_companion.character import CharacterProfile
+from evolving_companion.character_data import load_character_seed_data
+from evolving_companion.character_projection import (
+    CharacterProjector,
+    ProjectedCharacterContext,
+)
 from evolving_companion.conversation import Conversation
 from evolving_companion.prompting import PromptBuilder
 
@@ -15,21 +20,16 @@ class FakeLLMClient:
         return next(self.replies)
 
 
-def test_character_profile_has_a1_identity_and_sections() -> None:
-    profile = CharacterProfile()
-
-    assert profile.identity["development_id"] == "SI-001"
-    assert profile.identity["working_name"] == "玲"
-    assert profile.identity["identity_stage"] == "Pre-Identity"
-    assert profile.identity["personal_name_finalized"] is False
-    assert profile.personality
-    assert profile.behavioral_boundaries
-    assert profile.relationship_context
-    assert profile.knowledge_boundaries
+def load_projected_character() -> ProjectedCharacterContext:
+    seed_path = (
+        Path(__file__).resolve().parents[1] / "data" / "characters" / "si_001.yaml"
+    )
+    seed = load_character_seed_data(seed_path)
+    return CharacterProjector().project(seed)
 
 
 def test_prompt_builder_separates_system_context_and_history() -> None:
-    builder = PromptBuilder(CharacterProfile())
+    builder = PromptBuilder(load_projected_character())
     history = [
         {"role": "user", "content": "你好"},
         {"role": "assistant", "content": "你好呀。"},
@@ -45,28 +45,46 @@ def test_prompt_builder_separates_system_context_and_history() -> None:
     ]
     assert messages[1:3] == history
     assert messages[-1] == {"role": "user", "content": "你是谁？"}
-    assert "【身份】" in messages[0]["content"]
-    assert "【基础人格】" in messages[0]["content"]
-    assert "【行为边界】" in messages[0]["content"]
-    assert "【与 Azusa 的初始关系】" in messages[0]["content"]
-    assert "【认知边界】" in messages[0]["content"]
+    assert "【关于玲】" in messages[0]["content"]
 
 
 def test_system_message_includes_core_identity_and_knowledge_boundaries() -> None:
-    system_content = PromptBuilder(CharacterProfile()).build([], "测试")[0]["content"]
+    system_content = PromptBuilder(load_projected_character()).build([], "测试")[0][
+        "content"
+    ]
 
     assert "Character 不等于底层 LLM" in system_content
     assert "不得把模型自身身份当作 Character 身份" in system_content
     assert "模型知识不能自动视为 Character 本人已知信息" in system_content
     assert "Origin Records 不是 Lived Memory" in system_content
-    assert "SI-001" in system_content
     assert "玲" in system_content
-    assert "Pre-Identity" in system_content
-    assert "personal_name_finalized: False" in system_content
+    assert "目前使用‘玲’这个名字" in system_content
+    assert "正式姓名还没有确定" in system_content
+    assert "working_name" not in system_content
+    assert "personal_name" not in system_content
+    assert "identity_stage" not in system_content
+    assert "continuity_generation" not in system_content
+    assert "automatic_trust" not in system_content
+    assert "fabricated_past_allowed" not in system_content
+    assert "开发代号：SI-001" not in system_content
+
+
+def test_prompt_allows_rejecting_false_premises_without_filling_from_other_data() -> (
+    None
+):
+    system_content = PromptBuilder(load_projected_character()).build([], "测试")[0][
+        "content"
+    ]
+
+    assert "可以直接指出前提不成立" in system_content
+    assert "不要从其他角色资料中寻找替代内容来补全答案" in system_content
+    assert "不要把没有实际发生过的经历当成自己的回忆" in system_content
 
 
 def test_system_instructions_support_variable_lively_dialogue() -> None:
-    system_content = PromptBuilder(CharacterProfile()).build([], "测试")[0]["content"]
+    system_content = PromptBuilder(load_projected_character()).build([], "测试")[0][
+        "content"
+    ]
     system_instructions = system_content.split("【身份】", maxsplit=1)[0]
 
     assert "不要求固定长短" in system_instructions
@@ -84,7 +102,7 @@ def test_system_instructions_support_variable_lively_dialogue() -> None:
 
 def test_conversation_appends_successful_turns_in_order_in_memory() -> None:
     llm_client = FakeLLMClient(["你好呀。", "我喜欢看故事。"])
-    conversation = Conversation(llm_client)
+    conversation = Conversation(llm_client, load_projected_character())
 
     assert conversation.history == ()
     assert conversation.send("你好") == "你好呀。"
@@ -114,7 +132,7 @@ def test_failed_llm_request_does_not_append_history() -> None:
         def complete(self, messages: list[Mapping[str, str]]) -> str:
             raise RuntimeError("provider unavailable")
 
-    conversation = Conversation(FailingClient())
+    conversation = Conversation(FailingClient(), load_projected_character())
 
     try:
         conversation.send("你好")

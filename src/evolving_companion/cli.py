@@ -1,5 +1,9 @@
 """Minimal multi-turn terminal chat for SI-001."""
 
+from pathlib import Path
+
+from evolving_companion.character_data import load_character_seed_data
+from evolving_companion.character_projection import CharacterProjector
 from evolving_companion.conversation import Conversation
 from evolving_companion.llm import LLMClient
 
@@ -7,9 +11,17 @@ from evolving_companion.llm import LLMClient
 def main() -> None:
     """Read messages, print replies, and stop on ``/exit``."""
     try:
-        conversation = Conversation(LLMClient())
+        seed_path = (
+            Path(__file__).resolve().parents[2] / "data" / "characters" / "si_001.yaml"
+        )
+        seed_data = load_character_seed_data(seed_path)
+        character_context = CharacterProjector().project(seed_data)
+        conversation = Conversation(LLMClient(), character_context)
     except ValueError as error:
         print(error)
+        return
+    except OSError as error:
+        print(f"无法读取 Character Seed Data：{error}")
         return
 
     print("和玲聊天。输入 /exit 退出。")

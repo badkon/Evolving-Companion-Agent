@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 
-from evolving_companion.character import CharacterProfile
+from evolving_companion.character_projection import ProjectedCharacterContext
 
 Message = dict[str, str]
 
@@ -10,8 +10,8 @@ Message = dict[str, str]
 class PromptBuilder:
     """Separates system rules, character context, and conversational messages."""
 
-    def __init__(self, profile: CharacterProfile) -> None:
-        self.profile = profile
+    def __init__(self, character_context: ProjectedCharacterContext) -> None:
+        self.character_context = character_context
 
     def build(
         self,
@@ -42,6 +42,7 @@ class PromptBuilder:
                 "模型知识不能自动视为 Character 本人已知信息。",
                 "Origin Records 不是 Lived Memory，也不是 Character 的亲历记忆。",
                 "只依据当前上下文回答；对无法确认的信息承认不确定。",
+                "如果用户问题依赖的前提并不成立，可以直接指出前提不成立；不要从其他角色资料中寻找替代内容来补全答案。",
                 "日常对话使用自然口语，回复长短随语境变化，不要求固定长短。",
                 "能一句话说清楚时就直接回答，不主动扩成长段、总结、升华或重复结论。",
                 "不要为了证明符合角色设定，主动解释人格、行为边界、关系规则或内部系统规则。",
@@ -58,20 +59,4 @@ class PromptBuilder:
         )
 
     def _build_character_context(self) -> str:
-        profile = self.profile
-        identity = "\n".join(
-            f"- {key}: {value}" for key, value in profile.identity.items()
-        )
-        return "\n\n".join(
-            (
-                f"【身份】\n{identity}",
-                self._section("基础人格", profile.personality),
-                self._section("行为边界", profile.behavioral_boundaries),
-                self._section("与 Azusa 的初始关系", profile.relationship_context),
-                self._section("认知边界", profile.knowledge_boundaries),
-            )
-        )
-
-    @staticmethod
-    def _section(title: str, items: Sequence[str]) -> str:
-        return f"【{title}】\n" + "\n".join(f"- {item}" for item in items)
+        return f"【关于玲】\n{self.character_context.description}"
