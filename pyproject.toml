@@ -8,10 +8,15 @@ version = "0.0.1"
 description = "Engineering foundation for Evolving-Companion-Agent"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["openai>=1.0", "pydantic>=2.0", "PyYAML>=6.0"]
+dependencies = [
+    "openai>=1.0",
+    "numpy>=1.26",
+    "pydantic>=2.0",
+    "PyYAML>=6.0",
+    "sentence-transformers>=3.0",
+]
 
 [project.optional-dependencies]
-benchmark = ["sentence-transformers>=3.0"]
 dev = ["pytest>=8", "ruff>=0.6"]
 
 [tool.setuptools.packages.find]

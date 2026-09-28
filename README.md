@@ -4,14 +4,14 @@
 
 ## 当前状态
 
-- 开发阶段：**A3.2a — 结构化 Memory Extraction 与 Memory Gate 基础**。
+- 开发阶段：**A3.2b — Production Memory Retrieval v0.1**。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
 
 当前提供通过 DeepSeek API 进行多轮 CLI 对话的最小原型。SI-001 的 Seed Character Data 由 `data/characters/si_001.yaml` 唯一维护，经 Pydantic 校验和 Character Projection 后传给 PromptBuilder。
 A3.1 将原始对话立即归档到默认的 `runtime/si_001.db`，并建立 SQLite Memory Store 与 Evidence Chain 的显式存储 API。当前会话的 Prompt History 仍只保存在内存中，退出后清空。Archive 是系统原始记录，不自动成为 Character Memory 或 Character Knowledge。
-A3.2a 提供对给定 Conversation Chunk 执行一次结构化 Memory Extraction、证据校验及保存 Gate 的接口。当前不会自动处理真实会话，也尚未实现 Retrieval、Consolidation、自主行为或世界模拟。
+A3.2a 提供对给定 Conversation Chunk 执行一次结构化 Memory Extraction、证据校验及保存 Gate 的接口。A3.2b 提供独立的本地向量检索 API，但尚未接入 Conversation 或 Prompt。`memories` 与 `memory_evidence` 是权威 Memory 数据；`memory_embeddings` 是可删除并重建的派生索引。当前尚未实现自动 Memory Retrieval 接入、Consolidation、自主行为或世界模拟。
 
 ## 开发环境
 
@@ -55,7 +55,7 @@ ruff format --check .
 ```
 
 Python import 包名为 `evolving_companion`，源码位于 `src/evolving_companion/`。
-A1 使用 OpenAI Python SDK 作为 DeepSeek OpenAI-compatible API 的通信客户端；A2 使用 Pydantic 校验 Seed Data、PyYAML 读取 YAML。运行时依赖为 `openai`、`pydantic` 和 `PyYAML`，开发依赖为 pytest 和 Ruff。CI 在 Python 3.12 上执行相同的安装与检查步骤。
+A1 使用 OpenAI Python SDK 作为 DeepSeek OpenAI-compatible API 的通信客户端；A2 使用 Pydantic 校验 Seed Data、PyYAML 读取 YAML；A3.2b 使用 sentence-transformers 加载本地 BGE 模型，并使用 NumPy 处理向量。运行时依赖为 `openai`、`numpy`、`pydantic`、`PyYAML` 和 `sentence-transformers`，开发依赖为 pytest 和 Ruff。CI 在 Python 3.12 上执行相同的安装与检查步骤。
 
 设置 `DEEPSEEK_API_KEY` 环境变量后启动 CLI：
 

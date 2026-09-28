@@ -31,7 +31,12 @@ def test_store_initializes_three_tables_in_temporary_database(tmp_path: Path) ->
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             )
         }
-    assert {"archive_messages", "memories", "memory_evidence"} <= names
+    assert {
+        "archive_messages",
+        "memories",
+        "memory_evidence",
+        "memory_embeddings",
+    } <= names
 
 
 def test_archive_rejects_invalid_role_and_empty_content(tmp_path: Path) -> None:

@@ -44,6 +44,15 @@ CREATE TABLE IF NOT EXISTS memory_evidence (
     evidence_ref TEXT NOT NULL CHECK (length(trim(evidence_ref)) > 0),
     PRIMARY KEY (memory_id, evidence_kind, evidence_ref)
 );
+
+CREATE TABLE IF NOT EXISTS memory_embeddings (
+    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    model_name TEXT NOT NULL,
+    dimensions INTEGER NOT NULL CHECK (dimensions > 0),
+    embedding BLOB NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (memory_id, model_name)
+);
 """
 
 
@@ -91,6 +100,15 @@ class MemoryEvidence:
     memory_id: str
     evidence_kind: str
     evidence_ref: str
+
+
+@dataclass(frozen=True)
+class MemoryEmbedding:
+    memory_id: str
+    model_name: str
+    dimensions: int
+    embedding: bytes
+    created_at: str
 
 
 class SQLiteStore:
@@ -207,6 +225,58 @@ class SQLiteStore:
                 "SELECT * FROM memories WHERE id = ?", (memory_id,)
             ).fetchone()
         return MemoryRecord(**dict(row)) if row is not None else None
+
+    def list_active_memories(self) -> tuple[MemoryRecord, ...]:
+        """Return active memories in a stable order for indexing and retrieval."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT * FROM memories WHERE status = 'active' ORDER BY created_at, id"
+            ).fetchall()
+        return tuple(MemoryRecord(**dict(row)) for row in rows)
+
+    def get_memory_embeddings(
+        self, memory_ids: Sequence[str], model_name: str
+    ) -> dict[str, MemoryEmbedding]:
+        """Read cached vectors for one model, keyed by memory ID."""
+        if not memory_ids:
+            return {}
+        placeholders = ", ".join("?" for _ in memory_ids)
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                f"""SELECT memory_id, model_name, dimensions, embedding, created_at
+                    FROM memory_embeddings
+                    WHERE model_name = ? AND memory_id IN ({placeholders})""",
+                (model_name, *memory_ids),
+            ).fetchall()
+        return {row["memory_id"]: MemoryEmbedding(**dict(row)) for row in rows}
+
+    def upsert_memory_embeddings(
+        self,
+        embeddings: Sequence[MemoryEmbedding],
+    ) -> None:
+        """Write derived vectors without changing authoritative memory records."""
+        if not embeddings:
+            return
+        with closing(self._connect()) as connection, connection:
+            connection.executemany(
+                """INSERT INTO memory_embeddings
+                   (memory_id, model_name, dimensions, embedding, created_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(memory_id, model_name) DO UPDATE SET
+                       dimensions = excluded.dimensions,
+                       embedding = excluded.embedding,
+                       created_at = excluded.created_at""",
+                [
+                    (
+                        item.memory_id,
+                        item.model_name,
+                        item.dimensions,
+                        item.embedding,
+                        item.created_at,
+                    )
+                    for item in embeddings
+                ],
+            )
 
     def add_evidence(
         self, memory_id: str, evidence_kind: str, evidence_ref: str

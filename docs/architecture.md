@@ -6,16 +6,17 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — A3.2a
+## 当前工程状态 — A3.2b
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
 A2 v0.1 将初始 Seed Character Data 独立存放在 `data/characters/si_001.yaml`，数据路径为 YAML → Pydantic validation → Character Projection → PromptBuilder → LLM。
 A3.1 使用标准库 sqlite3 在 `runtime/si_001.db` 立即保存原始 Conversation Archive，并建立 `memories` 与 `memory_evidence` 表和显式读写 API。Archive 属于系统记录；Memory 需要单独创建，不能因为消息已归档就视为 Character Knowledge。当前 Prompt History 仍只在内存中。
 A3.2a 提供对调用方给定 Conversation Chunk 执行一次结构化 Memory Extraction、Pydantic 校验、Evidence Validation 和保存 Gate 的接口；仅 `save` 候选可写入现有 Memory 与 Evidence 表。该接口尚未接入真实会话自动处理。
-API Key 从 `DEEPSEEK_API_KEY` 环境变量读取。运行时依赖为 openai、pydantic 和 PyYAML，开发依赖为 pytest 和 Ruff。
+A3.2b 提供独立的 BAAI/bge-base-zh-v1.5 CPU Embedding Service 与 SQLite cosine-similarity Retrieval API，返回 active memories 的 Top-N candidates。它尚未接入 Conversation 或 Prompt，不做阈值过滤、重排或 LLM relevance judge。`memories` 与 `memory_evidence` 是权威 Memory Source of Truth；`memory_embeddings` 是按模型名缓存的派生、可重建数据，删除该表内容不丢失权威 Memory。
+API Key 从 `DEEPSEEK_API_KEY` 环境变量读取。运行时依赖为 openai、numpy、pydantic、PyYAML 和 sentence-transformers，开发依赖为 pytest 和 Ruff。
 
-当前没有自动会话分块或处理、Retrieval、Consolidation；也没有 World/NPC 模拟或自主行为。下文的完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
+当前没有自动会话分块或处理、Conversation 自动 Retrieval / Prompt Injection、Consolidation；也没有 World/NPC 模拟或自主行为。下文的完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
 
 ## 1. 核心分层
 
