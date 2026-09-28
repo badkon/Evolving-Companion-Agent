@@ -13,11 +13,15 @@ BASE_URL = "https://api.deepseek.com"
 class LLMClient:
     """Translate standard chat messages into a DeepSeek text completion."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, max_retries: int = 2) -> None:
         resolved_api_key = os.environ.get("DEEPSEEK_API_KEY")
         if not resolved_api_key:
             raise ValueError("请先设置环境变量 DEEPSEEK_API_KEY。")
-        self._client = OpenAI(api_key=resolved_api_key, base_url=BASE_URL)
+        self._client = OpenAI(
+            api_key=resolved_api_key,
+            base_url=BASE_URL,
+            max_retries=max_retries,
+        )
 
     def complete(self, messages: Sequence[Message]) -> str:
         response = self._client.chat.completions.create(
