@@ -9,9 +9,14 @@ from pydantic import ValidationError
 from evolving_companion.memory_extraction import (
     MEMORY_EXTRACTION_PROMPT,
     ArchiveChunkMessage,
+    Decision,
     MemoryCandidate,
     MemoryExtractionResult,
     MemoryExtractor,
+    MemorySource,
+    MemoryType,
+    Salience,
+    TextCompletionClient,
     persist_saved_candidates,
 )
 from evolving_companion.storage import SQLiteStore
@@ -19,7 +24,7 @@ from evolving_companion.storage import SQLiteStore
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "memory_extraction_cases.json"
 
 
-class FakeLLMClient:
+class FakeLLMClient(TextCompletionClient):
     def __init__(self, response: str) -> None:
         self.response = response
         self.calls: list[list[dict[str, str]]] = []
@@ -33,14 +38,17 @@ def make_candidate(
     evidence_refs: list[str],
     *,
     content: str = "用户生日是 10 月 7 日",
-    decision: str = "save",
+    memory_type: MemoryType = "semantic",
+    source: MemorySource = "explicit",
+    salience: Salience = "high",
+    decision: Decision = "save",
     reason: str = "明确且稳定的个人事实",
 ) -> MemoryCandidate:
     return MemoryCandidate(
         content=content,
-        memory_type="semantic",
-        source="explicit",
-        salience="high",
+        memory_type=memory_type,
+        source=source,
+        salience=salience,
         decision=decision,
         evidence_refs=evidence_refs,
         reason=reason,
@@ -128,7 +136,7 @@ def test_candidate_limit_and_empty_result_validation() -> None:
         ("decision", "maybe"),
     ):
         with pytest.raises(ValidationError):
-            MemoryCandidate(**(valid_candidate | {field: invalid_value}))
+            MemoryCandidate.model_validate(valid_candidate | {field: invalid_value})
 
 
 def test_prompt_sets_high_precision_rules_and_three_neutral_decision_examples() -> None:

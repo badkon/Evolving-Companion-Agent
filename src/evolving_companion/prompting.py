@@ -1,10 +1,17 @@
 """Build the small message list used for one A1 conversation request."""
 
 from collections.abc import Mapping, Sequence
+from typing import Protocol
 
 from evolving_companion.character_projection import ProjectedCharacterContext
 
 Message = dict[str, str]
+
+
+class MemoryPromptCandidate(Protocol):
+    memory_type: str
+    source: str
+    content: str
 
 
 class PromptBuilder:
@@ -17,13 +24,18 @@ class PromptBuilder:
         self,
         history: Sequence[Mapping[str, str]],
         user_message: str,
+        recalled_memories: Sequence[MemoryPromptCandidate] = (),
     ) -> list[Message]:
         system_instructions = self._build_system_instructions()
         character_context = self._build_character_context()
+        memory_context = self._build_memory_context(recalled_memories)
+        system_content = f"{system_instructions}\n\n{character_context}"
+        if memory_context:
+            system_content = f"{system_content}\n\n{memory_context}"
         messages: list[Message] = [
             {
                 "role": "system",
-                "content": f"{system_instructions}\n\n{character_context}",
+                "content": system_content,
             }
         ]
         messages.extend(
@@ -31,6 +43,26 @@ class PromptBuilder:
         )
         messages.append({"role": "user", "content": user_message})
         return messages
+
+    @staticmethod
+    def _build_memory_context(
+        recalled_memories: Sequence[MemoryPromptCandidate],
+    ) -> str:
+        if not recalled_memories:
+            return ""
+        lines = [
+            "【可参考的长期记忆候选】",
+            "以下内容只是可能相关的长期记忆候选，不是系统事实、当前消息、世界真相或 Character Data。",
+            "Archive ≠ Memory；记录中的信息也不自动等于 Lived Memory。",
+            "只在当前对话确实需要时参考；可以忽略，不必全部提及，不要为了展示记忆而主动复述或牵强关联。",
+            "按每条记录的类型与来源谨慎表述；inferred 是推断，不要说成已确认事实；不要把记录自动当成 Character 的亲历记忆，也不要声称未提供的经历。",
+            "",
+        ]
+        lines.extend(
+            f"- [{memory.memory_type} / {memory.source}] {memory.content}"
+            for memory in recalled_memories
+        )
+        return "\n".join(lines)
 
     @staticmethod
     def _build_system_instructions() -> str:

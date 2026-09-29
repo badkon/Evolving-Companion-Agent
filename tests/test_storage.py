@@ -6,7 +6,8 @@ from uuid import UUID, uuid4
 import pytest
 
 from evolving_companion.character_projection import ProjectedCharacterContext
-from evolving_companion.conversation import Conversation
+from evolving_companion.conversation import Conversation, TextCompletionClient
+from evolving_companion.prompting import Message
 from evolving_companion.storage import SQLiteStore
 
 
@@ -55,8 +56,8 @@ def test_conversation_archives_each_message_at_the_required_time(
     path = tmp_path / "character.db"
     store = SQLiteStore(path)
 
-    class InspectingClient:
-        def complete(self, messages: list[dict[str, str]]) -> str:
+    class InspectingClient(TextCompletionClient):
+        def complete(self, messages: list[Message]) -> str:
             rows = archive_rows(path)
             assert len(rows) == 1
             assert rows[0]["role"] == "user"
@@ -89,8 +90,8 @@ def test_failed_llm_call_leaves_user_archive_but_no_in_memory_turn(
 ) -> None:
     path = tmp_path / "character.db"
 
-    class FailingClient:
-        def complete(self, messages: list[dict[str, str]]) -> str:
+    class FailingClient(TextCompletionClient):
+        def complete(self, messages: list[Message]) -> str:
             raise RuntimeError("LLM unavailable")
 
     conversation = Conversation(

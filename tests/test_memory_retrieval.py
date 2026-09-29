@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 import sqlite3
 from pathlib import Path
 
@@ -5,16 +6,16 @@ import numpy as np
 import pytest
 
 from evolving_companion.embeddings import EMBEDDING_DIMENSIONS, MODEL_NAME
-from evolving_companion.memory_retrieval import MemoryRetriever
+from evolving_companion.memory_retrieval import EmbeddingEncoder, MemoryRetriever
 from evolving_companion.storage import MemoryEmbedding, SQLiteStore
 
 
-class FakeEmbeddingService:
+class FakeEmbeddingService(EmbeddingEncoder):
     def __init__(self, vectors: dict[str, np.ndarray]) -> None:
         self.vectors = vectors
         self.calls: list[list[str]] = []
 
-    def encode(self, texts: str | list[str]) -> np.ndarray:
+    def encode(self, texts: str | Sequence[str]) -> np.ndarray:
         items = [texts] if isinstance(texts, str) else list(texts)
         self.calls.append(items)
         return np.stack([self.vectors[item] for item in items]).astype(np.float32)

@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from pathlib import Path
 
 from evolving_companion.character_data import load_character_seed_data
@@ -6,17 +5,17 @@ from evolving_companion.character_projection import (
     CharacterProjector,
     ProjectedCharacterContext,
 )
-from evolving_companion.conversation import Conversation
-from evolving_companion.prompting import PromptBuilder
+from evolving_companion.conversation import Conversation, TextCompletionClient
+from evolving_companion.prompting import Message, PromptBuilder
 from evolving_companion.storage import SQLiteStore
 
 
-class FakeLLMClient:
+class FakeLLMClient(TextCompletionClient):
     def __init__(self, replies: list[str]) -> None:
         self.replies = iter(replies)
         self.requests: list[list[dict[str, str]]] = []
 
-    def complete(self, messages: list[dict[str, str]]) -> str:
+    def complete(self, messages: list[Message]) -> str:
         self.requests.append(messages)
         return next(self.replies)
 
@@ -134,7 +133,7 @@ def test_conversation_appends_successful_turns_in_order_in_memory(
 
 def test_failed_llm_request_does_not_append_history(tmp_path: Path) -> None:
     class FailingClient:
-        def complete(self, messages: list[Mapping[str, str]]) -> str:
+        def complete(self, messages: list[Message]) -> str:
             raise RuntimeError("provider unavailable")
 
     conversation = Conversation(

@@ -10,6 +10,11 @@ from time import perf_counter
 import numpy as np
 
 from evolving_companion.memory_reranker_experiment import rerank_candidates
+from evolving_companion.memory_policy import (
+    MemoryContextPolicy,
+    MemoryNeedPolicy,
+    build_query as _build_query,
+)
 
 MODES = ("current_only", "recent_context")
 FIXTURE_PATH = (
@@ -21,100 +26,20 @@ DIAGNOSTIC_LOW = 0.005
 DIAGNOSTIC_HIGH = 0.05
 DIAGNOSTIC_DELTA = 0.02
 
-# Small, auditable string cues for this disposable experiment.
-_RESET_CUES = (
-    "换个话题",
-    "不讨论我的",
-    "不是，只",
-    "不是，只查",
-    "只查",
-    "今天只想知道",
-    "只想知道",
-    "通用做法",
-    "通用知识题",
-    "学术史",
-)
-_PERSONAL_CUES = (
-    "我的",
-    "我平时",
-    "我平常",
-    "我以前",
-    "我之前",
-    "我一直",
-    "按我",
-    "适合我",
-    "我会喜欢",
-    "我喜欢",
-    "我研究",
-    "我在意",
-    "还在意什么",
-    "你还记得",
-    "你之前为什么",
-    "我们之前",
-    "我们那个",
-    "那个计划",
-    "当时",
-    "来着",
-    "我为什么",
-    "我最近为什么",
-    "我脑子都转不动",
-    "不会喜欢",
-)
-_UNRESOLVED_CUES = ("还没说是什么", "先不说", "不知道指哪个", "那这个呢", "那它呢")
-_BACK_REFERENCE_CUES = (
-    "这个",
-    "那个",
-    "它",
-    "当时",
-    "之前说的",
-    "之前那个",
-    "那个计划",
-    "来着",
-    "还合适吗",
-    "为什么定下来",
-)
-
 
 def _text(value: object) -> bool:
+    """Validate fixture text fields; separate from the production policy."""
     return isinstance(value, str) and bool(value.strip())
 
 
 def decide_memory_need(message: str) -> dict:
-    """Apply a tiny deterministic pre-gate to the current user message only."""
-    if not _text(message):
-        raise ValueError("current message must be nonempty")
-    text = " ".join(message.split())
-    if any(cue in text for cue in _UNRESOLVED_CUES):
-        return {"needed": False, "rules": ["unresolved_reference"]}
-    matched_resets = [cue for cue in _RESET_CUES if cue in text]
-    if matched_resets:
-        return {
-            "needed": False,
-            "rules": [f"topic_reset:{cue}" for cue in matched_resets],
-        }
-    matched_personal = [cue for cue in _PERSONAL_CUES if cue in text]
-    if matched_personal:
-        return {
-            "needed": True,
-            "rules": [f"personal:{cue}" for cue in matched_personal],
-        }
-    return {"needed": False, "rules": ["no_personal_memory_cue"]}
+    decision = MemoryNeedPolicy().evaluate(message)
+    return {"needed": decision.needed, "rules": list(decision.matched_rules)}
 
 
 def select_context_mode(message: str) -> dict:
-    """Use recent turns only for clear backward references; resets stay current-only."""
-    if not _text(message):
-        raise ValueError("current message must be nonempty")
-    text = " ".join(message.split())
-    if any(cue in text for cue in _UNRESOLVED_CUES + _RESET_CUES):
-        return {"mode": "current_only", "rules": ["unresolved_or_topic_reset"]}
-    matched = [cue for cue in _BACK_REFERENCE_CUES if cue in text]
-    if matched:
-        return {
-            "mode": "recent_context",
-            "rules": [f"back_reference:{cue}" for cue in matched],
-        }
-    return {"mode": "current_only", "rules": ["self_contained_or_no_back_reference"]}
+    decision = MemoryContextPolicy().evaluate(message)
+    return {"mode": decision.mode, "rules": list(decision.matched_rules)}
 
 
 def confusion_matrix(cases: list[dict], decisions: dict[str, dict]) -> dict:
@@ -152,31 +77,7 @@ def confusion_matrix(cases: list[dict], decisions: dict[str, dict]) -> dict:
     }
 
 
-def build_query(messages: list[dict], mode: str, context_messages: int = 5) -> str:
-    """Keep only the last N messages, including the final user turn exactly once."""
-    if mode not in MODES or type(context_messages) is not int:
-        raise ValueError("invalid query mode or context window")
-    if not 3 <= context_messages <= 6:
-        raise ValueError("context_messages must be between 3 and 6")
-    if not isinstance(messages, list) or not messages:
-        raise ValueError("messages must be a nonempty list")
-    for message in messages:
-        if (
-            not isinstance(message, dict)
-            or message.get("role") not in ("user", "assistant")
-            or not _text(message.get("content"))
-        ):
-            raise ValueError(
-                "messages require user/assistant role and nonempty content"
-            )
-    if messages[-1]["role"] != "user":
-        raise ValueError("case must end with the current user message")
-    if mode == "current_only":
-        return messages[-1]["content"]
-    return "\n".join(
-        f"{message['role']}: {message['content']}"
-        for message in messages[-context_messages:]
-    )
+build_query = _build_query
 
 
 def load_cases(path: Path = FIXTURE_PATH) -> dict:

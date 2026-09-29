@@ -6,7 +6,7 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — A3.2b
+## 当前工程状态 — A3.3
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
@@ -19,10 +19,11 @@ A3.2d 增加离线 `BAAI/bge-reranker-base` CrossEncoder 实验，对 semantic T
 
 A3.2e 为 experimental relevance gate benchmark，使用独立合成案例、临时 SQLite、生产 semantic Top-10 与本地 CrossEncoder，比较 current_only / recent_context 的最高候选分数分布。production 仍未启用 relevance gate、未注入长期 memory，threshold 尚未冻结；诊断标签仅供人工复查，不形成 gate 判定。
 
-A3.2f 扩展该离线实验，以简单、确定、可解释的字符串规则评估 Memory Need，并只在消息包含明确回指时选择拼接近期上下文。实验比较 current_only_everywhere、recent_context_everywhere 与 rule_based_selective；Semantic relevance 不等于 Memory need，朴素上下文拼接可能造成 context pollution。production 未采用该规则，未启用 relevance gate 或长期 memory 注入。
+A3.2f 离线实验以简单、确定、可解释的字符串规则评估 Memory Need，并只在消息包含明确回指时选择拼接近期上下文。其实验比较 current_only_everywhere、recent_context_everywhere 与 rule_based_selective；Semantic relevance 不等于 Memory need，朴素上下文拼接可能造成 context pollution。fixture 指标不表示已证明泛化正确。
+A3.3 将 A3.2f 的纯 Memory Need / Context Policy 复用于生产 recall 链路：Memory Need → Selective Context → BGE semantic Top-10 → `BAAI/bge-reranker-base` raw-score 排序 → 最多 Top-3 注入 Prompt。reranker lazy load 并使用 CPU，scores 仅保留在 diagnostics，不注入 Prompt。当前没有统一 reranker threshold、salience/recency rerank；记忆以可忽略的候选上下文呈现，不是 system truth。规则可能无法泛化到所有自然语言。
 API Key 从 `DEEPSEEK_API_KEY` 环境变量读取。运行时依赖为 openai、numpy、pydantic、PyYAML 和 sentence-transformers，开发依赖为 pytest 和 Ruff。
 
-当前没有自动会话分块或处理、Conversation 自动 Retrieval / Prompt Injection、Consolidation；也没有 World/NPC 模拟或自主行为。下文的完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
+当前没有自动 Memory Extraction、Consolidation；也没有 World/NPC 模拟或自主行为。下文的完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
 
 ## 1. 核心分层
 
