@@ -1,11 +1,15 @@
 """Coordinate one conversation turn while keeping history in memory."""
 
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from typing import Protocol
 from uuid import UUID, uuid4
 
 from evolving_companion.character_projection import ProjectedCharacterContext
 from evolving_companion.character_state import CharacterStateService
+from evolving_companion.character_state_transition import (
+    CharacterStateTransitionService,
+)
 from evolving_companion.memory_formation import (
     MemoryFormationPort,
     MemoryFormationResult,
@@ -51,6 +55,11 @@ class Conversation:
         self._memory_recall_service = memory_recall_service
         self._memory_formation_service = memory_formation_service
         self._character_state_service = character_state_service
+        self._state_transition_service = (
+            CharacterStateTransitionService(character_state_service)
+            if character_state_service is not None
+            else None
+        )
         self._character_id = character_id
         self._last_memory_formation_result: MemoryFormationResult | None = None
         self.conversation_id = str(uuid4())
@@ -71,12 +80,12 @@ class Conversation:
             self.conversation_id, "user", user_message
         )
         character_state = None
-        if self._character_state_service is not None:
+        if self._state_transition_service is not None:
             # character_id is validated as the stable identity.internal_id UUID.
             assert self._character_id is not None
-            character_state = self._character_state_service.get_state(
-                self._character_id
-            )
+            character_state = self._state_transition_service.apply_elapsed_time(
+                self._character_id, datetime.now(timezone.utc)
+            ).after_state
         recalled_memories: tuple[MemoryPromptCandidate, ...] = ()
         if self._memory_recall_service is not None:
             recall_result = self._memory_recall_service.recall(

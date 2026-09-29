@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 开发阶段：**A4 — Character State v0.1 — Complete**。
+- 开发阶段：**A4.1 — State Transition v0.1 — Complete**。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
@@ -12,7 +12,7 @@
 当前提供通过 DeepSeek API 进行多轮 CLI 对话的最小原型。SI-001 的 Seed Character Data 由 `data/characters/si_001.yaml` 唯一维护，经 Pydantic 校验和 Character Projection 后传给 PromptBuilder。
 A3 建立了长期记忆 v1 的 archive/evidence 存储、按需 recall 与 Top-3 候选注入、成功对话后的 memory formation，以及保守的 conflict/supersede 流程。Archive 与 Memory 分离；旧记忆保留为历史，生产 recall 仅使用 active memory。冻结架构、实验结论和限制见 [A3 Long-term Memory v1](docs/a3_long_term_memory_v1.md)。
 
-A4 v0.1 增加基于 `identity.internal_id` UUID 的单行当前 Character State 持久化、显式部分更新和独立 Prompt 状态区块。Conversation 只读取 State，不根据对话自动更新。设计与限制见 [A4 Character State v0.1](docs/a4_character_state_v01.md)。
+A4 v0.1 增加基于 `identity.internal_id` UUID 的单行当前 Character State 持久化、显式部分更新和独立 Prompt 状态区块。A4.1 增加确定性显式事件转变和 elapsed-time 规则；Conversation 在处理本轮前应用时间规则，不从对话语义推断 State。设计与限制见 [A4 Character State v0.1 / A4.1 State Transition](docs/a4_character_state_v01.md)。
 
 当前尚未实现 memory merge、summary、自主行为或世界模拟。
 
@@ -70,6 +70,7 @@ python -m evolving_companion.cli
 
 输入 `/exit` 退出。API Key 不应写入仓库或打印到终端日志。
 CLI 中 `/state` 及其参数是本地开发调试命令，不会调用 LLM。
+离线检查 A4.1 transition：`python scripts/run_character_state_transition_smoke.py`。可选 `--real-llm` 仅用于观察 Prompt 表达，不属于规则验证。
 
 ## 设计文档
 

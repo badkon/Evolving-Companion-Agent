@@ -97,4 +97,6 @@ def test_conversation_reads_state_but_does_not_update_it(tmp_path: Path) -> None
     )
     assert conversation.send("你好") == "好。"
     after = CharacterStateService(SQLiteStore(tmp_path / "state.db")).get_state(key)
-    assert after == before
+    assert after.model_dump(exclude={"updated_at"}) == before.model_dump(
+        exclude={"updated_at"}
+    )

@@ -13,6 +13,11 @@ from evolving_companion.character_state import (
     MoodTendency,
     SocialEngagement,
 )
+from evolving_companion.character_state_transition import (
+    CharacterStateEvent,
+    CharacterStateTransitionService,
+    StateEventType,
+)
 from evolving_companion.conversation import Conversation
 from evolving_companion.llm import LLMClient
 from evolving_companion.local_env import load_local_env
@@ -44,6 +49,7 @@ def main() -> None:
         character_context = CharacterProjector().project(seed_data)
         store = SQLiteStore()
         state_service = CharacterStateService(store)
+        transition_service = CharacterStateTransitionService(state_service)
         retriever = MemoryRetriever(store)
         recall_service = MemoryRecallService(retriever, MemoryReranker())
         llm_client = LLMClient()
@@ -70,7 +76,7 @@ def main() -> None:
         return
 
     print("和玲聊天。输入 /exit 退出。")
-    print("开发状态命令：/state [energy|attention|mood|social|activity …]")
+    print("开发状态命令：/state [energy|attention|mood|social|activity|event …]")
     while True:
         try:
             user_message = input("你：").strip()
@@ -84,7 +90,10 @@ def main() -> None:
             continue
         if user_message == "/state" or user_message.startswith("/state "):
             _handle_state_command(
-                user_message, state_service, seed_data.identity.internal_id
+                user_message,
+                state_service,
+                transition_service,
+                seed_data.identity.internal_id,
             )
             continue
 
@@ -95,7 +104,10 @@ def main() -> None:
 
 
 def _handle_state_command(
-    command: str, state_service: CharacterStateService, character_id: UUID
+    command: str,
+    state_service: CharacterStateService,
+    transition_service: CharacterStateTransitionService,
+    character_id: UUID,
 ) -> None:
     """Small local-only developer command for explicit state inspection/updates."""
     parts = command.split(maxsplit=2)
@@ -111,9 +123,31 @@ def _handle_state_command(
             return
         if len(parts) < 3:
             raise ValueError(
-                "用法：/state <energy|attention|mood|social|activity> <值>"
+                "用法：/state <energy|attention|mood|social|activity|event> <值>"
             )
         field, value = parts[1], parts[2]
+        if field == "event":
+            event_types: dict[str, StateEventType] = {
+                "rest": "rest_started",
+                "focus-start": "focused_task_started",
+                "focus-end": "focused_task_ended",
+                "mood-up": "mood_up",
+                "mood-down": "mood_down",
+                "mood-reset": "mood_reset",
+                "social-up": "social_engagement_up",
+                "social-down": "social_engagement_down",
+            }
+            event_type = event_types.get(value)
+            if event_type is None:
+                raise ValueError(
+                    "事件可选 rest、focus-start、focus-end、mood-up、mood-down、"
+                    "mood-reset、social-up、social-down。"
+                )
+            result = transition_service.apply_event(
+                character_id, CharacterStateEvent(event_type)
+            )
+            print(f"{result.reason} changed_fields={result.changed_fields}")
+            return
         if field == "energy":
             if value not in {"low", "medium", "high"}:
                 raise ValueError("energy 可选 low、medium、high。")
@@ -137,10 +171,18 @@ def _handle_state_command(
                 character_id, social_engagement=cast(SocialEngagement, value)
             )
         elif field == "activity":
-            state = state_service.update_state(
-                character_id,
-                current_activity=None if value == "none" else value,
+            event_type: StateEventType = (
+                "activity_cleared" if value == "none" else "activity_set"
             )
+            result = transition_service.apply_event(
+                character_id,
+                CharacterStateEvent(
+                    event_type,
+                    activity_name=None if value == "none" else value,
+                ),
+            )
+            print(f"{result.reason} changed_fields={result.changed_fields}")
+            return
         else:
             raise ValueError(
                 "未知状态字段；可用 energy、attention、mood、social、activity。"

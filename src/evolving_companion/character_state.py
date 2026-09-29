@@ -57,14 +57,21 @@ class CharacterStateService:
     def __init__(self, store: CharacterStateStore) -> None:
         self._store = store
 
-    def get_state(self, character_id: UUID) -> CharacterState:
+    def get_state(
+        self, character_id: UUID, *, initialize_at: datetime | None = None
+    ) -> CharacterState:
         state = self._store.get_character_state(character_id)
         if state is None:
             state = CharacterState(
-                character_id=character_id, updated_at=datetime.now(timezone.utc)
+                character_id=character_id,
+                updated_at=initialize_at or datetime.now(timezone.utc),
             )
             self._store.upsert_character_state(state)
         return state
+
+    def save_state(self, state: CharacterState) -> None:
+        """Persist a complete explicitly computed state snapshot."""
+        self._store.upsert_character_state(state)
 
     def update_state(
         self,
