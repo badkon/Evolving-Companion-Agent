@@ -16,10 +16,12 @@ from evolving_companion.character_state import (
 
 StateEventType = Literal[
     "conversation_started",
+    "conversation_ended",
     "conversation_turn_completed",
     "focused_task_started",
     "focused_task_ended",
     "rest_started",
+    "rest_ended",
     "activity_set",
     "activity_cleared",
     "time_elapsed",
@@ -32,10 +34,12 @@ StateEventType = Literal[
 _EVENT_TYPES = frozenset(
     {
         "conversation_started",
+        "conversation_ended",
         "conversation_turn_completed",
         "focused_task_started",
         "focused_task_ended",
         "rest_started",
+        "rest_ended",
         "activity_set",
         "activity_cleared",
         "time_elapsed",
@@ -113,8 +117,8 @@ class CharacterStateTransitionService:
                 before,
                 before,
                 event.event_type,
-                "事件时间早于当前状态时间，未应用该事件。",
-                ("stale_event",),
+                "事件时间早于状态更新时间；State 字段和时间锚点均保持不变。",
+                ("clock_moved_backwards",),
             )
 
         changes: dict[str, str | None] = {}

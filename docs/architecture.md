@@ -6,7 +6,7 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — A4.1 State Transition v0.1 Complete
+## 当前工程状态 — A4.2 Explicit Character Events v0.1 Complete
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
@@ -15,7 +15,7 @@ SI-001 的 Character Seed Data 已包含固定 UUID `identity.internal_id`，作
 当前 A3 冻结基线包含 SQLite Archive / Evidence、rule-based Memory Need 与 Selective Context、active-memory semantic retrieval、CrossEncoder rerank、Top-3 candidate injection、成功回复后的 Memory Extraction，以及保守的 `keep_both` / `supersede_old` / `uncertain` consolidation。详细流程、接受/延后决策、验证证据与已知限制统一见 [A3 Long-term Memory v1](a3_long_term_memory_v1.md)，避免在此重复维护阶段细节。
 LLM Adapter 只从 `DEEPSEEK_API_KEY` 环境变量读取 API Key；CLI 与真实 LLM 实验入口可在启动时从 Git 忽略的项目根目录 `.env.local` 加载该变量，且不覆盖已存在的进程环境变量。运行时依赖为 openai、numpy、pydantic、PyYAML、python-dotenv 和 sentence-transformers，开发依赖为 pytest 和 Ruff。
 
-当前 A4 v0.1 已增加本地 SQLite 当前 Character State，使用 `identity.internal_id` UUID 作为 State 主键；A4.1 添加确定性显式事件与 elapsed-time transition。Conversation 在用户消息归档后、Memory recall 前更新时间经过规则，再独立投影状态；不根据对话内容推断 State。State Transition 结果不注入 Prompt、不写 Memory，也不保存事件历史。详见 [A4 Character State / A4.1 State Transition](a4_character_state_v01.md)。当前没有 memory merge/summary；也没有 World/NPC 模拟或自主行为。完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
+当前 A4 v0.1 已增加本地 SQLite 当前 Character State，使用 `identity.internal_id` UUID 作为 State 主键；A4.1 添加确定性 elapsed-time transition；A4.2 添加不持久化的显式 Character Event 及其 State Transition 映射。Conversation 在用户消息归档后、Memory recall 前应用 elapsed-time 规则；不会从对话内容推断 State。Event 不写入 Memory、不创建事件历史表。详见 [A4 Character State / A4.1 State Transition](a4_character_state_v01.md) 与 [A4.2 Explicit Character Events](a4_2_character_events_v01.md)。当前没有 memory merge/summary；也没有 World/NPC 模拟或自主行为。完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
 
 ## 1. 核心分层
 
@@ -31,7 +31,9 @@ Character 的身份与长期状态不应绑定于特定模型、操作系统、�
 
 当前总体方向：
 
-Explicit State Events + Elapsed Time
+External / Internal Trigger
+↓
+Character Event
 ↓
 Deterministic State Transition
 ↓
@@ -94,7 +96,7 @@ Runtime Data 不进入 Git。
 
 ## 5. 存储
 
-当前使用 SQLite 保存对话原始记录、显式创建的 Memory，以及 A4 的单行当前 Character State。A4.1 不新增 transition event/history 表；完整 Character Store 尚未实现。
+当前使用 SQLite 保存对话原始记录、显式创建的 Memory，以及 A4 的单行当前 Character State。A4.1/A4.2 不新增 transition 或 event history 表；完整 Character Store 尚未实现。
 
 上层模块不应直接依赖具体数据库实现，应通过统一的数据访问边界访问 Character State。
 

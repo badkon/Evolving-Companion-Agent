@@ -18,6 +18,14 @@ from evolving_companion.character_state_transition import (
     CharacterStateTransitionService,
     StateEventType,
 )
+from evolving_companion.character_events import (
+    ActivityEventPayload,
+    CharacterEvent,
+    CharacterEventService,
+    CharacterEventType,
+    CharacterEventSource,
+)
+from evolving_companion.character_state import CharacterState
 from evolving_companion.conversation import Conversation
 from evolving_companion.llm import LLMClient
 from evolving_companion.local_env import load_local_env
@@ -50,6 +58,9 @@ def main() -> None:
         store = SQLiteStore()
         state_service = CharacterStateService(store)
         transition_service = CharacterStateTransitionService(state_service)
+        event_service = CharacterEventService(
+            seed_data.identity.internal_id, state_service, transition_service
+        )
         retriever = MemoryRetriever(store)
         recall_service = MemoryRecallService(retriever, MemoryReranker())
         llm_client = LLMClient()
@@ -94,6 +105,11 @@ def main() -> None:
                 state_service,
                 transition_service,
                 seed_data.identity.internal_id,
+            )
+            continue
+        if user_message == "/event" or user_message.startswith("/event "):
+            _handle_event_command(
+                user_message, event_service, seed_data.identity.internal_id
             )
             continue
 
@@ -195,6 +211,72 @@ def _handle_state_command(
         f"energy={state.energy}, attention={state.attention}, "
         f"mood={state.mood_tendency}, social={state.social_engagement}, "
         f"activity={state.current_activity or '无'}"
+    )
+
+
+def _handle_event_command(
+    command: str, event_service: CharacterEventService, character_id: UUID
+) -> None:
+    """Handle a few explicit, local developer event commands."""
+    parts = command.split(maxsplit=2)
+    if len(parts) < 2:
+        print(
+            "用法：/event <activity-start|activity-end|rest-start|rest-end|focus-start|focus-end> [活动]"
+        )
+        return
+
+    command_name = parts[1]
+    activity_name = parts[2] if len(parts) == 3 else None
+    event_map: dict[str, tuple[CharacterEventType, CharacterEventSource, bool]] = {
+        "activity-start": ("activity_started", "activity", True),
+        "activity-end": ("activity_ended", "activity", True),
+        "rest-start": ("rest_started", "developer", False),
+        "rest-end": ("rest_ended", "developer", False),
+        "focus-start": ("focused_task_started", "activity", True),
+        "focus-end": ("focused_task_ended", "activity", False),
+    }
+    mapping = event_map.get(command_name)
+    if mapping is None:
+        print(
+            "未知事件；可用 activity-start、activity-end、rest-start、rest-end、focus-start、focus-end。"
+        )
+        return
+
+    event_type, source, requires_activity = mapping
+    if requires_activity and not activity_name:
+        print(f"/event {command_name} 需要活动名称。")
+        return
+    payload = (
+        ActivityEventPayload(activity_name=activity_name)
+        if activity_name is not None
+        and event_type not in {"rest_started", "rest_ended"}
+        else None
+    )
+    try:
+        result = event_service.handle(
+            CharacterEvent(
+                character_id=character_id,
+                event_type=event_type,
+                source=source,
+                payload=payload,
+            )
+        )
+    except ValueError as error:
+        print(f"事件无效：{error}")
+        return
+
+    print(f"event handled: {result.handled}; {result.reason}")
+    print(f"state before: {_format_state(result.before_state)}")
+    print(f"state after:  {_format_state(result.after_state)}")
+
+
+def _format_state(state: CharacterState | None) -> str:
+    if state is None:
+        return "unavailable"
+    return (
+        f"energy={state.energy}, attention={state.attention}, "
+        f"mood={state.mood_tendency}, social={state.social_engagement}, "
+        f"activity={state.current_activity or 'none'}"
     )
 
 
