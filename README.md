@@ -15,6 +15,10 @@ A3.2a 提供对给定 Conversation Chunk 执行一次结构化 Memory Extraction
 A3.2c 的 rerank runner 是离线实验工具，仅对生产 Retriever 给出的 semantic Top-10 候选进行轻量实验重排，不改变 Production MemoryRetriever。
 A3.2d 增加本地 CrossEncoder relevance reranker 实验，以原始 logit 与 sigmoid score 观察排序及相关/无关分布；仍不接入生产对话链路，也不设置 relevance threshold。
 
+A3.2e 为 experimental relevance gate benchmark：使用独立合成 fixture 比较当前消息与最近上下文的最高相关性分数分布。production 仍未启用 relevance gate、未注入长期 memory，threshold 尚未冻结。人工运行 `python scripts/run_memory_relevance_gate_benchmark.py`（CPU，临时 SQLite；首次运行可能下载模型），可通过 `--context-messages 3` 至 `6` 调整上下文消息数，默认 5；测试不加载模型。
+
+A3.2f 在同一实验 fixture 上评估确定性的 Memory Need 前置规则与 Selective Context Policy，并与 current-only / recent-context 基线比较。Semantic relevance 不等于 Memory need；直接拼接最近上下文可能造成 context pollution。该规则仅用于离线实验，production 未采用 rule-based gate，也未注入长期 memory。
+
 ## 开发环境
 
 需要 Python **3.12 或更高版本**。在仓库根目录创建虚拟环境：

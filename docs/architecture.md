@@ -16,6 +16,10 @@ A3.2a 提供对调用方给定 Conversation Chunk 执行一次结构化 Memory E
 A3.2b 提供独立的 BAAI/bge-base-zh-v1.5 CPU Embedding Service 与 SQLite cosine-similarity Retrieval API，返回 active memories 的 Top-N candidates。它尚未接入 Conversation 或 Prompt，不做阈值过滤、重排或 LLM relevance judge。`memories` 与 `memory_evidence` 是权威 Memory Source of Truth；`memory_embeddings` 是按模型名缓存的派生、可重建数据，删除该表内容不丢失权威 Memory。
 A3.2c 增加离线 salience / recency rerank 实验 runner；它只重排 Production MemoryRetriever 返回的 semantic Top-10 候选，不更改生产检索排序策略。
 A3.2d 增加离线 `BAAI/bge-reranker-base` CrossEncoder 实验，对 semantic Top-10 进行相关性排序并观察 raw / sigmoid score 分布；不接入 Conversation 或 Prompt，不定义或执行生产 relevance threshold。
+
+A3.2e 为 experimental relevance gate benchmark，使用独立合成案例、临时 SQLite、生产 semantic Top-10 与本地 CrossEncoder，比较 current_only / recent_context 的最高候选分数分布。production 仍未启用 relevance gate、未注入长期 memory，threshold 尚未冻结；诊断标签仅供人工复查，不形成 gate 判定。
+
+A3.2f 扩展该离线实验，以简单、确定、可解释的字符串规则评估 Memory Need，并只在消息包含明确回指时选择拼接近期上下文。实验比较 current_only_everywhere、recent_context_everywhere 与 rule_based_selective；Semantic relevance 不等于 Memory need，朴素上下文拼接可能造成 context pollution。production 未采用该规则，未启用 relevance gate 或长期 memory 注入。
 API Key 从 `DEEPSEEK_API_KEY` 环境变量读取。运行时依赖为 openai、numpy、pydantic、PyYAML 和 sentence-transformers，开发依赖为 pytest 和 Ruff。
 
 当前没有自动会话分块或处理、Conversation 自动 Retrieval / Prompt Injection、Consolidation；也没有 World/NPC 模拟或自主行为。下文的完整 Character Store 和多设备服务仍属于架构方向，尚未实现。

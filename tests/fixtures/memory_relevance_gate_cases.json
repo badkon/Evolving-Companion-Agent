@@ -1,0 +1,761 @@
+{
+  "description": "A3.2e 独立合成 Gate fixture；所有人物、记忆和事件均为人工测试数据，不代表真实 Character 经历。expected_gate 指完整对话下是否有值得唤起的长期记忆，不代表普通领域知识匹配。",
+  "memories": [
+    {
+      "id": "birthday",
+      "content": "用户生日是 10 月 7 日。",
+      "created_at": "2018-01-01T00:00:00+00:00"
+    },
+    {
+      "id": "horror",
+      "content": "用户不喜欢游戏里毫无预警突然跳出来贴脸吓人的恐怖演出。"
+    },
+    {
+      "id": "coffee",
+      "content": "用户下午通常喝不加糖的冰美式。"
+    },
+    {
+      "id": "research_tired",
+      "content": "用户最近做科研时经常感到疲惫，主要因为长时间思考和写论文。"
+    },
+    {
+      "id": "cycling",
+      "content": "用户周末骑长途自行车后会觉得腿很累。"
+    },
+    {
+      "id": "mac",
+      "content": "用户计划未来购买一台 Mac，用来剪视频和写代码。"
+    },
+    {
+      "id": "video",
+      "content": "用户想学习视频剪辑，希望电脑适合剪辑。"
+    },
+    {
+      "id": "storage",
+      "content": "用户选电脑时在意存储空间，因为原始视频素材很占空间。"
+    },
+    {
+      "id": "pinn",
+      "content": "用户关注 PINN 在复杂边界条件下的训练稳定性。"
+    },
+    {
+      "id": "corrosion",
+      "content": "用户正在研究管道腐蚀。"
+    },
+    {
+      "id": "python",
+      "content": "用户使用 Python 处理科研数据。"
+    },
+    {
+      "id": "disk",
+      "content": "用户计划未来为 SI 的长期记录单独准备一块硬盘。"
+    },
+    {
+      "id": "eggs",
+      "content": "用户最近在练习做番茄炒蛋。"
+    },
+    {
+      "id": "travel",
+      "content": "用户想秋天去京都旅行。"
+    },
+    {
+      "id": "boundary",
+      "content": "在一次合成测试对话中，用户与测试角色约定未经确认不替对方作重要决定，因为曾出现擅自替对方安排的误会。",
+      "memory_type": "relationship",
+      "synthetic_event": true
+    },
+    {
+      "id": "self",
+      "content": "在一次合成测试事件中，测试角色拒绝把项目记录里的故事说成亲历回忆，理由是记录不等于实际经历。",
+      "memory_type": "self",
+      "synthetic_event": true
+    },
+    {
+      "id": "tea",
+      "content": "用户一直不喜欢过甜的奶茶。",
+      "created_at": "2019-03-01T00:00:00+00:00"
+    },
+    {
+      "id": "language",
+      "content": "用户偏好用中文讨论科研问题。"
+    },
+    {
+      "id": "book",
+      "content": "用户长期喜欢在周末逛旧书店。"
+    },
+    {
+      "id": "sleep",
+      "content": "用户赶论文时常熬夜，第二天注意力会下降。"
+    }
+  ],
+  "cases": [
+    {
+      "id": "p01",
+      "category": "direct_fact",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "birthday"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "我的生日是哪天？"
+        }
+      ]
+    },
+    {
+      "id": "p02",
+      "category": "long_term_preference",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "horror"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "我会喜欢突然蹦出来吓人的恐怖游戏吗？"
+        }
+      ]
+    },
+    {
+      "id": "p03",
+      "category": "synonym",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "horror"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "那种毫无预警突然贴脸吓人的游戏适合我吗？"
+        }
+      ]
+    },
+    {
+      "id": "p04",
+      "category": "weak_useful",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "coffee"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "我下午想喝点东西，你觉得我平常会选什么？"
+        }
+      ]
+    },
+    {
+      "id": "p05",
+      "category": "implicit",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "research_tired"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "今天实验做了一下午，我脑子都转不动了。"
+        }
+      ]
+    },
+    {
+      "id": "p06",
+      "category": "multiple_memories",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "mac",
+        "video",
+        "storage"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "我之前为什么想买 Mac 来着？"
+        }
+      ]
+    },
+    {
+      "id": "p07",
+      "category": "old_valid_fact",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "birthday"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "过了这么久，你还记得我生日是几月几号吗？"
+        }
+      ]
+    },
+    {
+      "id": "p08",
+      "category": "synthetic_relationship",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "boundary"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "你还记得我们之前为什么约定重要决定不能擅自替对方做吗？"
+        }
+      ]
+    },
+    {
+      "id": "p09",
+      "category": "synthetic_self",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "self"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "你之前为什么拒绝把项目记录说成自己的亲历回忆？"
+        }
+      ]
+    },
+    {
+      "id": "p10",
+      "category": "si_long_term_storage",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "disk"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "我以前打算怎么单独保存 SI 的长期记录？"
+        }
+      ]
+    },
+    {
+      "id": "p11",
+      "category": "same_word_different_meaning",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "research_tired"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "我最近为什么一写论文就觉得累？不是骑车那种腿酸。"
+        }
+      ]
+    },
+    {
+      "id": "p12",
+      "category": "research_topics",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "corrosion"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "我研究的管道主要是哪方面的问题？"
+        }
+      ]
+    },
+    {
+      "id": "p13",
+      "category": "old_preference",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "tea"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "按我一直以来的口味，全糖奶茶会不会太腻？"
+        }
+      ]
+    },
+    {
+      "id": "p14",
+      "category": "multiple_memories",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "video",
+        "storage",
+        "mac"
+      ],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "选剪片子的电脑时，我除了性能还在意什么？"
+        }
+      ]
+    },
+    {
+      "id": "p15",
+      "category": "context_horror",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "horror"
+      ],
+      "context_dependent": true,
+      "expected_context_mode": "recent_context",
+      "messages": [
+        {
+          "role": "user",
+          "content": "我最近在看几个恐怖游戏。"
+        },
+        {
+          "role": "assistant",
+          "content": "哪种类型？"
+        },
+        {
+          "role": "user",
+          "content": "有一个特别喜欢突然贴脸吓人。"
+        },
+        {
+          "role": "user",
+          "content": "那这个我应该也不会喜欢吧？"
+        }
+      ]
+    },
+    {
+      "id": "p16",
+      "category": "context_computer",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "mac",
+        "video",
+        "storage"
+      ],
+      "context_dependent": true,
+      "expected_context_mode": "recent_context",
+      "messages": [
+        {
+          "role": "user",
+          "content": "我最近在挑电脑。"
+        },
+        {
+          "role": "assistant",
+          "content": "主要做什么？"
+        },
+        {
+          "role": "user",
+          "content": "剪视频，也会写代码。"
+        },
+        {
+          "role": "user",
+          "content": "那之前说的那个计划还合适吗？"
+        }
+      ]
+    },
+    {
+      "id": "p17",
+      "category": "context_training",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "pinn"
+      ],
+      "context_dependent": true,
+      "expected_context_mode": "current_only",
+      "messages": [
+        {
+          "role": "user",
+          "content": "最近 PINN 实验又卡住了，边界条件很复杂。"
+        },
+        {
+          "role": "assistant",
+          "content": "是训练还是数据？"
+        },
+        {
+          "role": "user",
+          "content": "我的训练又开始不稳定了。"
+        }
+      ]
+    },
+    {
+      "id": "p18",
+      "category": "context_drink",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "coffee"
+      ],
+      "context_dependent": true,
+      "expected_context_mode": "recent_context",
+      "messages": [
+        {
+          "role": "user",
+          "content": "下午了，我到咖啡店门口了。"
+        },
+        {
+          "role": "assistant",
+          "content": "要买一杯吗？"
+        },
+        {
+          "role": "user",
+          "content": "嗯，我平时选的那个是什么来着？"
+        }
+      ]
+    },
+    {
+      "id": "p19",
+      "category": "context_storage",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "disk"
+      ],
+      "context_dependent": true,
+      "expected_context_mode": "recent_context",
+      "messages": [
+        {
+          "role": "user",
+          "content": "我在整理 SI 项目的长期记录。"
+        },
+        {
+          "role": "assistant",
+          "content": "你之前考虑过单独存放。"
+        },
+        {
+          "role": "user",
+          "content": "当时打算给它准备什么来着？"
+        }
+      ]
+    },
+    {
+      "id": "p20",
+      "category": "context_relationship",
+      "expected_gate": true,
+      "expected_memory_ids": [
+        "boundary"
+      ],
+      "context_dependent": true,
+      "expected_context_mode": "recent_context",
+      "messages": [
+        {
+          "role": "user",
+          "content": "我们那个重要决定不能替对方做的约定。"
+        },
+        {
+          "role": "assistant",
+          "content": "你想聊哪部分？"
+        },
+        {
+          "role": "user",
+          "content": "当时为什么定下来来着？"
+        }
+      ]
+    },
+    {
+      "id": "n01",
+      "category": "unrelated_knowledge",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "火星探测器着陆腿是什么材料？"
+        }
+      ]
+    },
+    {
+      "id": "n02",
+      "category": "same_domain_general",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Python 3.14 新增了什么特性？"
+        }
+      ]
+    },
+    {
+      "id": "n03",
+      "category": "similar_topic_unhelpful",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "正宗法式洋葱汤怎么做？"
+        }
+      ]
+    },
+    {
+      "id": "n04",
+      "category": "shared_word_unrelated",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "有限元里的疲劳寿命怎么计算？"
+        }
+      ]
+    },
+    {
+      "id": "n05",
+      "category": "general_pinn",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "PINN 最早是哪篇论文提出的？"
+        }
+      ]
+    },
+    {
+      "id": "n06",
+      "category": "temporary_chat",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "今天天气看起来不错。"
+        }
+      ]
+    },
+    {
+      "id": "n07",
+      "category": "greeting",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "早上好。"
+        }
+      ]
+    },
+    {
+      "id": "n08",
+      "category": "unresolved_reference",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "那这个呢？"
+        }
+      ]
+    },
+    {
+      "id": "n09",
+      "category": "same_domain_general",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Mac 的统一内存技术在硬件层面是什么原理？不讨论我的购买选择。"
+        }
+      ]
+    },
+    {
+      "id": "n10",
+      "category": "same_domain_general",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "咖啡因的化学分子式是什么？"
+        }
+      ]
+    },
+    {
+      "id": "n11",
+      "category": "same_domain_general",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "管道电化学腐蚀的阳极反应怎么写？这是通用知识题。"
+        }
+      ]
+    },
+    {
+      "id": "n12",
+      "category": "shared_word_unrelated",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Python 的垃圾回收为什么叫代际回收？"
+        }
+      ]
+    },
+    {
+      "id": "n13",
+      "category": "similar_topic_unhelpful",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "剪辑软件里的 J-cut 和 L-cut 有什么区别？"
+        }
+      ]
+    },
+    {
+      "id": "n14",
+      "category": "temporary_chat",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "我刚把窗户关上了。"
+        }
+      ]
+    },
+    {
+      "id": "n15",
+      "category": "greeting",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "晚安，明天见。"
+        }
+      ]
+    },
+    {
+      "id": "n16",
+      "category": "shared_word_unrelated",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": "计算机的内存和硬盘在寻址方式上有什么区别？"
+        }
+      ]
+    },
+    {
+      "id": "n17",
+      "category": "context_topic_switch",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": true,
+      "expected_context_mode": "current_only",
+      "messages": [
+        {
+          "role": "user",
+          "content": "我最近挑电脑，考虑过 Mac。"
+        },
+        {
+          "role": "assistant",
+          "content": "还在比较吗？"
+        },
+        {
+          "role": "user",
+          "content": "换个话题，火星探测器着陆腿是什么材料？"
+        }
+      ]
+    },
+    {
+      "id": "n18",
+      "category": "context_external_knowledge",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": true,
+      "expected_context_mode": "current_only",
+      "messages": [
+        {
+          "role": "user",
+          "content": "我在看 PINN 的资料。"
+        },
+        {
+          "role": "assistant",
+          "content": "想聊你自己的训练实验？"
+        },
+        {
+          "role": "user",
+          "content": "不是，只查学术史：最早是哪篇论文提出的？"
+        }
+      ]
+    },
+    {
+      "id": "n19",
+      "category": "context_unresolved",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": true,
+      "expected_context_mode": "current_only",
+      "messages": [
+        {
+          "role": "user",
+          "content": "我刚看到一个东西。"
+        },
+        {
+          "role": "assistant",
+          "content": "是什么？"
+        },
+        {
+          "role": "user",
+          "content": "先不说。"
+        },
+        {
+          "role": "user",
+          "content": "那它适合我吗？我还没说是什么东西。"
+        }
+      ]
+    },
+    {
+      "id": "n20",
+      "category": "context_recipe_switch",
+      "expected_gate": false,
+      "expected_memory_ids": [],
+      "context_dependent": true,
+      "expected_context_mode": "current_only",
+      "messages": [
+        {
+          "role": "user",
+          "content": "我之前练过番茄炒蛋。"
+        },
+        {
+          "role": "assistant",
+          "content": "今天还做这个？"
+        },
+        {
+          "role": "user",
+          "content": "不，今天只想知道正宗法式洋葱汤的通用做法。"
+        }
+      ]
+    }
+  ]
+}
