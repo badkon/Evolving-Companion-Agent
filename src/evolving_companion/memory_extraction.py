@@ -74,6 +74,8 @@ MEMORY_EXTRACTION_PROMPT = """你是高精度的 Memory Extraction 与 Gate。�
 
 只根据提供的对话内容判断，不得补充对话中未出现的信息，也不把模型常识当作 Character Experience。Developer 或 System 后台信息不是 Character 的 Lived Memory。不要为了让人物显得丰满而生成不存在的过去。
 
+assistant 消息不能自动变成用户事实。不要把 assistant 生成的一般知识、建议或解释，抽取成用户的知识、观点、研究、计划或偏好；只有 user 消息明确提供的个人信息才支持这类 user memory。assistant 消息只能在确实发生重要关系事件、边界协商或对 Character 有持续意义的真实互动时，谨慎支持 relationship / self memory，也可用于澄清 user 已提供的信息。普通回答、附和或“好的”不构成 self memory。
+
 分类定义：
 - episodic：具体发生过的一件事情。
 - semantic：相对稳定的事实或当前认识。

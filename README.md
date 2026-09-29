@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 开发阶段：**A3.3 — Memory Injection v0.1**。
+- 开发阶段：**A3.4 — Memory Extraction Integration v0.1**。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
@@ -19,8 +19,9 @@ A3.2e 为 experimental relevance gate benchmark：使用独立合成 fixture 比
 
 A3.2f 在同一实验 fixture 上评估确定性的 Memory Need 前置规则与 Selective Context Policy，并与 current-only / recent-context 基线比较。Semantic relevance 不等于 Memory need；直接拼接最近上下文可能造成 context pollution。fixture 结果不代表规则已证明可泛化。
 A3.3 将 Memory Need → Selective Context → semantic Top-10 → 本地 Cross-Encoder → Top-3 candidate memory 注入 Conversation/Prompt。没有全局 reranker threshold，也不做 salience/recency rerank；Prompt 将召回项表达为可忽略的候选上下文，不是系统事实。规则仍可能无法覆盖所有自然语言。人工运行 `python scripts/run_memory_injection_smoke.py` 可用临时 SQLite 和真实本地检索/重排模型检查注入；默认使用 fake LLM，传入 `--real-llm` 才调用 DeepSeek。
+A3.4 在主回复成功并归档后，对当前 user/assistant 消息对执行一次高精度 Memory Extraction；提取出的有效 `save` 候选通过现有 evidence 校验和 normalized active-content dedup 后写入 SQLite。顺序是 Recall existing memory → Generate response → Archive assistant → Extract new memory，因此本轮新记忆不会参与本轮 recall。Extraction 失败不影响主回复；`reject` / `uncertain` 不落库。当前不做 consolidation、冲突解决或自动 supersede。人工运行 `python scripts/run_memory_formation_smoke.py` 使用临时 SQLite；默认是 fake 主 LLM 与 deterministic extractor，决策仅用于流程演示；传入 `--real-llm` 才调用 DeepSeek。
 
-当前尚未实现自动 Memory Extraction、Consolidation、自主行为或世界模拟。
+当前尚未实现 Memory Consolidation、自主行为或世界模拟。
 
 ## 开发环境
 

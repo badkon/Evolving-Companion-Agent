@@ -145,6 +145,9 @@ def test_prompt_sets_high_precision_rules_and_three_neutral_decision_examples() 
     assert "Developer 或 System 后台信息不是 Character 的 Lived Memory" in (
         MEMORY_EXTRACTION_PROMPT
     )
+    assert "assistant 消息不能自动变成用户事实" in MEMORY_EXTRACTION_PROMPT
+    assert "assistant 生成的一般知识、建议或解释" in MEMORY_EXTRACTION_PROMPT
+    assert "普通回答、附和或“好的”不构成 self memory" in MEMORY_EXTRACTION_PROMPT
     assert "observed：对话中实际发生并可直接观察的事实或行为，只写“发生了什么”" in (
         MEMORY_EXTRACTION_PROMPT
     )

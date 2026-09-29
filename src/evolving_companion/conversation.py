@@ -5,6 +5,10 @@ from typing import Protocol
 from uuid import uuid4
 
 from evolving_companion.character_projection import ProjectedCharacterContext
+from evolving_companion.memory_formation import (
+    MemoryFormationPort,
+    MemoryFormationResult,
+)
 from evolving_companion.memory_recall import MemoryRecallPort
 from evolving_companion.prompting import (
     MemoryPromptCandidate,
@@ -29,11 +33,14 @@ class Conversation:
         character_context: ProjectedCharacterContext,
         archive_store: SQLiteStore,
         memory_recall_service: MemoryRecallPort | None = None,
+        memory_formation_service: MemoryFormationPort | None = None,
     ) -> None:
         self._llm_client = llm_client
         self._prompt_builder = PromptBuilder(character_context)
         self._archive_store = archive_store
         self._memory_recall_service = memory_recall_service
+        self._memory_formation_service = memory_formation_service
+        self._last_memory_formation_result: MemoryFormationResult | None = None
         self.conversation_id = str(uuid4())
         self._history: list[Message] = []
 
@@ -42,8 +49,13 @@ class Conversation:
         """Return a read-only snapshot of the in-memory conversation history."""
         return tuple(dict(message) for message in self._history)
 
+    @property
+    def last_memory_formation_result(self) -> MemoryFormationResult | None:
+        """Return internal diagnostics for the most recent completed turn."""
+        return self._last_memory_formation_result
+
     def send(self, user_message: str) -> str:
-        self._archive_store.append_archive_message(
+        user_archive_id = self._archive_store.append_archive_message(
             self.conversation_id, "user", user_message
         )
         recalled_memories: tuple[MemoryPromptCandidate, ...] = ()
@@ -56,7 +68,7 @@ class Conversation:
             self._history, user_message, recalled_memories
         )
         reply = self._llm_client.complete(messages)
-        self._archive_store.append_archive_message(
+        assistant_archive_id = self._archive_store.append_archive_message(
             self.conversation_id, "assistant", reply
         )
         self._history.extend(
@@ -65,4 +77,26 @@ class Conversation:
                 {"role": "assistant", "content": reply},
             )
         )
+        self._last_memory_formation_result = None
+        if self._memory_formation_service is not None:
+            try:
+                self._last_memory_formation_result = (
+                    self._memory_formation_service.process_turn(
+                        {
+                            "id": user_archive_id,
+                            "role": "user",
+                            "content": user_message,
+                        },
+                        {
+                            "id": assistant_archive_id,
+                            "role": "assistant",
+                            "content": reply,
+                        },
+                    )
+                )
+            except Exception as error:
+                # Keep provider/database details out of user-visible output and logs.
+                self._last_memory_formation_result = MemoryFormationResult(
+                    error=type(error).__name__
+                )
         return reply

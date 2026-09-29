@@ -6,6 +6,8 @@ from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.character_projection import CharacterProjector
 from evolving_companion.conversation import Conversation
 from evolving_companion.llm import LLMClient
+from evolving_companion.memory_extraction import MemoryExtractor
+from evolving_companion.memory_formation import MemoryFormationService
 from evolving_companion.memory_recall import MemoryRecallService
 from evolving_companion.memory_reranker import MemoryReranker
 from evolving_companion.memory_retrieval import MemoryRetriever
@@ -22,8 +24,14 @@ def main() -> None:
         character_context = CharacterProjector().project(seed_data)
         store = SQLiteStore()
         recall_service = MemoryRecallService(MemoryRetriever(store), MemoryReranker())
+        llm_client = LLMClient()
+        formation_service = MemoryFormationService(MemoryExtractor(llm_client), store)
         conversation = Conversation(
-            LLMClient(), character_context, store, memory_recall_service=recall_service
+            llm_client,
+            character_context,
+            store,
+            memory_recall_service=recall_service,
+            memory_formation_service=formation_service,
         )
     except ValueError as error:
         print(error)
