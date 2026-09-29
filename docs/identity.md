@@ -58,13 +58,16 @@ Identity Kernel 保存用于确认：
 
 ### 2.1 Internal ID
 
-系统内部永久身份标识。
+系统内部稳定机器身份标识，使用严格 UUID 类型。它是 Character 与数据库记录、后续 State、Relationship、World 等数据绑定时使用的身份键；不作为 Character 的人类可见名称或日常称呼，也不注入普通 Prompt。
 
 - 使用无语义的机器标识，例如 UUID；
 - 不承担人物设定意义；
 - 不作为 Character 的日常称呼；
-- 原则上永久不变；
+- effectively immutable；普通运行时不得修改；
+- 只允许在开发期 seed migration 或创建新 Character 时设定；
 - 用于数据库、状态关联、迁移与内部一致性判断。
+
+当前 SI-001 的 Internal ID 已固定写入 `data/characters/si_001.yaml`。加载时解析为 UUID；程序启动、数据库初始化或设备变化均不得重新生成它。
 
 ---
 
@@ -93,6 +96,8 @@ SI 表达项目对 Character 的长期意向：
 Development Designation 不是 Character 的正式个人名字，也不等同于软件版本。
 
 普通代码更新、模型更换和系统版本迭代不会改变该代号。只有在开发阶段明确建立新的 Character 原型时，才考虑产生新的开发代号。
+
+Development Designation 与 Internal ID 是不同字段、不同语义：前者用于开发阶段识别原型，后者是 UUID 稳定机器身份键。当前 `SI-001` 不是 Internal ID，也不能替代它。
 
 正式个人名字确定后，SI 代号仍作为早期 Identity History 的一部分保留。
 
@@ -237,12 +242,16 @@ Character 进入能够长期保持身份、状态、记忆与经历连续性的�
 
 `SI-001`
 
+当前 Internal ID 已建立并作为稳定机器身份键使用；这不表示正式 Personal Name 或 Character ID 已建立。
+
 以下信息暂未确定：
 
 - Personal Name；
 - Birthday；
 - Character ID；
 - Stable Continuous Life Epoch。
+
+Internal ID 不在上述待定列表中：SI-001 的 Internal UUID 已固定，且与 `development_id = SI-001` 分离。
 
 这些信息不应为了完成配置而提前填充。
 

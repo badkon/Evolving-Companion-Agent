@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from typing import Literal
+from uuid import UUID
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,6 +15,7 @@ class SeedModel(BaseModel):
 
 
 class IdentityData(SeedModel):
+    internal_id: UUID
     development_id: str
     working_name: str
     personal_name: str | None
