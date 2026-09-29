@@ -45,6 +45,13 @@ CREATE TABLE IF NOT EXISTS memory_evidence (
     PRIMARY KEY (memory_id, evidence_kind, evidence_ref)
 );
 
+CREATE TABLE IF NOT EXISTS memory_supersessions (
+    old_memory_id TEXT NOT NULL REFERENCES memories(id),
+    new_memory_id TEXT NOT NULL REFERENCES memories(id),
+    PRIMARY KEY (old_memory_id, new_memory_id),
+    CHECK (old_memory_id <> new_memory_id)
+);
+
 CREATE TABLE IF NOT EXISTS memory_embeddings (
     memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
     model_name TEXT NOT NULL,
@@ -231,6 +238,66 @@ class SQLiteStore:
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT * FROM memories WHERE status = 'active' ORDER BY created_at, id"
+            ).fetchall()
+        return tuple(MemoryRecord(**dict(row)) for row in rows)
+
+    def supersede_memories(
+        self, old_memory_ids: Sequence[str], new_memory_id: str
+    ) -> tuple[MemoryRecord, ...]:
+        """Atomically mark active old memories superseded by one active new memory."""
+        _require_uuid(new_memory_id, "new_memory_id")
+        unique_old_ids = tuple(dict.fromkeys(old_memory_ids))
+        for memory_id in unique_old_ids:
+            _require_uuid(memory_id, "old_memory_id")
+        if new_memory_id in unique_old_ids:
+            raise ValueError("a memory cannot supersede itself")
+        if not unique_old_ids:
+            return ()
+
+        placeholders = ", ".join("?" for _ in unique_old_ids)
+        with closing(self._connect()) as connection, connection:
+            new_row = connection.execute(
+                "SELECT status FROM memories WHERE id = ?", (new_memory_id,)
+            ).fetchone()
+            if new_row is None or new_row["status"] != "active":
+                raise ValueError("new memory must exist and be active")
+
+            old_rows = connection.execute(
+                f"SELECT * FROM memories WHERE id IN ({placeholders})",
+                unique_old_ids,
+            ).fetchall()
+            if len(old_rows) != len(unique_old_ids) or any(
+                row["status"] != "active" for row in old_rows
+            ):
+                raise ValueError("all old memories must exist and be active")
+
+            updated = connection.executemany(
+                "UPDATE memories SET status = 'superseded' "
+                "WHERE id = ? AND status = 'active'",
+                [(memory_id,) for memory_id in unique_old_ids],
+            )
+            if updated.rowcount != len(unique_old_ids):
+                raise ValueError("old memory status changed during supersede")
+            connection.executemany(
+                """INSERT INTO memory_supersessions
+                   (old_memory_id, new_memory_id) VALUES (?, ?)""",
+                [(memory_id, new_memory_id) for memory_id in unique_old_ids],
+            )
+        return tuple(
+            MemoryRecord(**{**dict(row), "status": "superseded"}) for row in old_rows
+        )
+
+    def get_superseded_memories(self, new_memory_id: str) -> tuple[MemoryRecord, ...]:
+        """Return historical memories linked to the given superseding memory."""
+        _require_uuid(new_memory_id, "new_memory_id")
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """SELECT memories.* FROM memories
+                   JOIN memory_supersessions
+                     ON memory_supersessions.old_memory_id = memories.id
+                   WHERE memory_supersessions.new_memory_id = ?
+                   ORDER BY memories.created_at, memories.id""",
+                (new_memory_id,),
             ).fetchall()
         return tuple(MemoryRecord(**dict(row)) for row in rows)
 

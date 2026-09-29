@@ -6,6 +6,11 @@ from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.character_projection import CharacterProjector
 from evolving_companion.conversation import Conversation
 from evolving_companion.llm import LLMClient
+from evolving_companion.local_env import load_local_env
+from evolving_companion.memory_consolidation import (
+    MemoryConsolidationJudge,
+    MemoryConsolidationService,
+)
 from evolving_companion.memory_extraction import MemoryExtractor
 from evolving_companion.memory_formation import MemoryFormationService
 from evolving_companion.memory_recall import MemoryRecallService
@@ -16,6 +21,12 @@ from evolving_companion.storage import SQLiteStore
 
 def main() -> None:
     """Read messages, print replies, and stop on ``/exit``."""
+    if not load_local_env():
+        print(
+            "DEEPSEEK_API_KEY is not configured. Set it in the environment or "
+            "create .env.local from .env.example."
+        )
+        return
     try:
         seed_path = (
             Path(__file__).resolve().parents[2] / "data" / "characters" / "si_001.yaml"
@@ -23,9 +34,15 @@ def main() -> None:
         seed_data = load_character_seed_data(seed_path)
         character_context = CharacterProjector().project(seed_data)
         store = SQLiteStore()
-        recall_service = MemoryRecallService(MemoryRetriever(store), MemoryReranker())
+        retriever = MemoryRetriever(store)
+        recall_service = MemoryRecallService(retriever, MemoryReranker())
         llm_client = LLMClient()
-        formation_service = MemoryFormationService(MemoryExtractor(llm_client), store)
+        consolidation_service = MemoryConsolidationService(
+            store, retriever, MemoryConsolidationJudge(llm_client)
+        )
+        formation_service = MemoryFormationService(
+            MemoryExtractor(llm_client), store, consolidation_service
+        )
         conversation = Conversation(
             llm_client,
             character_context,

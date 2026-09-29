@@ -4,6 +4,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from evolving_companion.memory_consolidation import (
+    MemoryConsolidationResult,
+)
 from evolving_companion.memory_extraction import (
     ArchiveChunkMessage,
     MemoryCandidate,
@@ -27,6 +30,10 @@ class MemoryFormationPort(Protocol):
     ) -> "MemoryFormationResult": ...
 
 
+class MemoryConsolidationPort(Protocol):
+    def process_new_memory(self, memory_id: str) -> MemoryConsolidationResult: ...
+
+
 @dataclass(frozen=True)
 class MemoryFormationResult:
     """Internal diagnostics for one post-response extraction attempt."""
@@ -35,15 +42,22 @@ class MemoryFormationResult:
     saved_memory_ids: tuple[str, ...] = ()
     rejected_count: int = 0
     uncertain_count: int = 0
+    consolidation_results: tuple[MemoryConsolidationResult, ...] = ()
     error: str | None = None
 
 
 class MemoryFormationService:
     """Extract and persist only evidence-backed candidates from one turn pair."""
 
-    def __init__(self, extractor: MemoryExtractionPort, store: SQLiteStore) -> None:
+    def __init__(
+        self,
+        extractor: MemoryExtractionPort,
+        store: SQLiteStore,
+        consolidation_service: MemoryConsolidationPort | None = None,
+    ) -> None:
         self._extractor = extractor
         self._store = store
+        self._consolidation_service = consolidation_service
 
     def process_turn(
         self,
@@ -59,6 +73,20 @@ class MemoryFormationService:
 
         result = self._extractor.extract_memories(chunk)
         saved = persist_saved_candidates(result, chunk, self._store)
+        consolidation_results: list[MemoryConsolidationResult] = []
+        if self._consolidation_service is not None:
+            for memory in saved:
+                try:
+                    consolidation_results.append(
+                        self._consolidation_service.process_new_memory(memory.id)
+                    )
+                except Exception as error:
+                    consolidation_results.append(
+                        MemoryConsolidationResult(
+                            new_memory_id=memory.id,
+                            error=type(error).__name__,
+                        )
+                    )
         return MemoryFormationResult(
             candidates=tuple(result.candidates),
             saved_memory_ids=tuple(memory.id for memory in saved),
@@ -68,4 +96,5 @@ class MemoryFormationService:
             uncertain_count=sum(
                 candidate.decision == "uncertain" for candidate in result.candidates
             ),
+            consolidation_results=tuple(consolidation_results),
         )

@@ -153,11 +153,56 @@ def test_prompt_sets_high_precision_rules_and_three_neutral_decision_examples() 
     )
     assert "inferred：根据一个或多个线索推断出的认识" in MEMORY_EXTRACTION_PROMPT
     assert "明确更新或撤回旧信息" in MEMORY_EXTRACTION_PROMPT
+    assert (
+        "即使说“现在”，也可将该更新作为长期 Memory 考虑 save"
+        in MEMORY_EXTRACTION_PROMPT
+    )
+    assert "今天/这两天/此刻不想……" in MEMORY_EXTRACTION_PROMPT
+    assert "不按单个关键词机械判断" in MEMORY_EXTRACTION_PROMPT
     assert "寒暄、临时情绪或短期状态、普通一次性日常细节通常 reject" in (
         MEMORY_EXTRACTION_PROMPT
     )
     assert "最多返回 5 条" in MEMORY_EXTRACTION_PROMPT
     assert MEMORY_EXTRACTION_PROMPT.count("→") == 3
+
+
+@pytest.mark.parametrize(
+    ("content", "decision", "expected_saved"),
+    [
+        ("我现在不打算买 Mac 了。", "save", True),
+        ("我今天不想喝咖啡。", "reject", False),
+    ],
+)
+def test_explicit_long_term_update_and_temporary_state_gate(
+    tmp_path: Path,
+    content: str,
+    decision: Decision,
+    expected_saved: bool,
+) -> None:
+    store = SQLiteStore(tmp_path / "updates.db")
+    chunk = make_chunk(store, content)
+    candidate_content = "用户不再计划购买 Mac" if "Mac" in content else ""
+    response = json.dumps(
+        {
+            "candidates": [
+                {
+                    "content": candidate_content or content,
+                    "memory_type": "semantic",
+                    "source": "explicit",
+                    "salience": "medium",
+                    "decision": decision,
+                    "evidence_refs": [chunk[0]["id"]],
+                    "reason": "明确更新" if expected_saved else "仅限今天的临时状态",
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+
+    extraction = MemoryExtractor(FakeLLMClient(response)).extract_memories(chunk)
+    saved = persist_saved_candidates(extraction, chunk, store)
+
+    assert bool(saved) is expected_saved
 
 
 def test_save_requires_evidence_from_current_chunk(tmp_path: Path) -> None:

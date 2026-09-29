@@ -6,25 +6,26 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — A3.4
+## 当前工程状态 — A3.5
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
 A2 v0.1 将初始 Seed Character Data 独立存放在 `data/characters/si_001.yaml`，数据路径为 YAML → Pydantic validation → Character Projection → PromptBuilder → LLM。
 A3.1 使用标准库 sqlite3 在 `runtime/si_001.db` 立即保存原始 Conversation Archive，并建立 `memories` 与 `memory_evidence` 表和显式读写 API。Archive 属于系统记录；Memory 需要单独创建，不能因为消息已归档就视为 Character Knowledge。当前 Prompt History 仍只在内存中。
 A3.2a 提供对调用方给定 Conversation Chunk 执行一次结构化 Memory Extraction、Pydantic 校验、Evidence Validation 和保存 Gate 的接口；仅 `save` 候选可写入现有 Memory 与 Evidence 表。
-A3.2b 提供独立的 BAAI/bge-base-zh-v1.5 CPU Embedding Service 与 SQLite cosine-similarity Retrieval API，返回 active memories 的 Top-N candidates。它尚未接入 Conversation 或 Prompt，不做阈值过滤、重排或 LLM relevance judge。`memories` 与 `memory_evidence` 是权威 Memory Source of Truth；`memory_embeddings` 是按模型名缓存的派生、可重建数据，删除该表内容不丢失权威 Memory。
+A3.2b 提供 BAAI/bge-base-zh-v1.5 CPU Embedding Service 与 SQLite cosine-similarity Retrieval API，返回 active memories 的 Top-N candidates。`memory_embeddings` 是按模型名缓存的派生、可重建数据，删除该表内容不丢失权威 Memory。
 A3.2c 增加离线 salience / recency rerank 实验 runner；它只重排 Production MemoryRetriever 返回的 semantic Top-10 候选，不更改生产检索排序策略。
 A3.2d 增加离线 `BAAI/bge-reranker-base` CrossEncoder 实验，对 semantic Top-10 进行相关性排序并观察 raw / sigmoid score 分布；不接入 Conversation 或 Prompt，不定义或执行生产 relevance threshold。
 
-A3.2e 为 experimental relevance gate benchmark，使用独立合成案例、临时 SQLite、生产 semantic Top-10 与本地 CrossEncoder，比较 current_only / recent_context 的最高候选分数分布。production 仍未启用 relevance gate、未注入长期 memory，threshold 尚未冻结；诊断标签仅供人工复查，不形成 gate 判定。
+A3.2e 为 experimental relevance gate benchmark，使用独立合成案例、临时 SQLite、semantic Top-10 与本地 CrossEncoder，比较 current_only / recent_context 的最高候选分数分布；实验诊断标签不形成生产 gate 判定。
 
 A3.2f 离线实验以简单、确定、可解释的字符串规则评估 Memory Need，并只在消息包含明确回指时选择拼接近期上下文。其实验比较 current_only_everywhere、recent_context_everywhere 与 rule_based_selective；Semantic relevance 不等于 Memory need，朴素上下文拼接可能造成 context pollution。fixture 指标不表示已证明泛化正确。
 A3.3 将 A3.2f 的纯 Memory Need / Context Policy 复用于生产 recall 链路：Memory Need → Selective Context → BGE semantic Top-10 → `BAAI/bge-reranker-base` raw-score 排序 → 最多 Top-3 注入 Prompt。reranker lazy load 并使用 CPU，scores 仅保留在 diagnostics，不注入 Prompt。当前没有统一 reranker threshold、salience/recency rerank；记忆以可忽略的候选上下文呈现，不是 system truth。规则可能无法泛化到所有自然语言。
-A3.4 在成功回复归档后自动对当前 user/assistant 消息对执行一次 Memory Extraction。顺序为 Recall existing memory → Generate response → Archive assistant → Extract new memory；当前轮新记忆不能参与当前轮 recall。只持久化现有高精度 gate 判定为 `save` 且 evidence 指向本轮真实 Archive ID 的候选，并沿用 normalized active-content dedup。`reject` / `uncertain` 不持久化；extraction 失败是 best-effort side effect，不影响主回复。没有 consolidation、自动 supersede 或冲突解决。
-API Key 从 `DEEPSEEK_API_KEY` 环境变量读取。运行时依赖为 openai、numpy、pydantic、PyYAML 和 sentence-transformers，开发依赖为 pytest 和 Ruff。
+A3.4 在成功回复归档后自动对当前 user/assistant 消息对执行一次 Memory Extraction。只持久化现有高精度 gate 判定为 `save` 且 evidence 指向本轮真实 Archive ID 的候选，并沿用 normalized active-content dedup。`reject` / `uncertain` 不持久化；extraction 失败是 best-effort side effect，不影响主回复。
+A3.5 对每条新保存的 Memory 检索最多 5 条相关 active 旧 Memory，由 Pydantic 校验的 judge 对每一对输出 `keep_both` / `supersede_old` / `uncertain` 和简短 reason。只对明确当前状态替代的旧 Memory 执行 supersede；旧记录及 evidence 保留，superseded 状态不参与生产 recall。状态更新与 supersession link 在同一 SQLite transaction 内提交；先完成所有 judge 决策再写旧状态，judge/retrieval/写入失败不回滚新 memory，也不影响主回复。新增 `memory_supersessions(old_memory_id, new_memory_id)` link 表以支持一个新 Memory supersede 多条旧 Memory；既有 `memories.supersedes_memory_id` 字段保持兼容。当前不做 merge、summary 或全库 consolidation。
+LLM Adapter 只从 `DEEPSEEK_API_KEY` 环境变量读取 API Key；CLI 与真实 LLM 实验入口可在启动时从 Git 忽略的项目根目录 `.env.local` 加载该变量，且不覆盖已存在的进程环境变量。运行时依赖为 openai、numpy、pydantic、PyYAML、python-dotenv 和 sentence-transformers，开发依赖为 pytest 和 Ruff。
 
-当前没有 Memory Consolidation；也没有 World/NPC 模拟或自主行为。下文的完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
+当前没有 memory merge/summary；也没有 World/NPC 模拟或自主行为。下文的完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
 
 ## 1. 核心分层
 

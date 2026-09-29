@@ -13,6 +13,7 @@ from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.character_projection import CharacterProjector
 from evolving_companion.conversation import Conversation, TextCompletionClient
 from evolving_companion.llm import LLMClient
+from evolving_companion.local_env import load_local_env
 from evolving_companion.memory_extraction import (
     ArchiveChunkMessage,
     Decision,
@@ -122,7 +123,7 @@ def _print_turn(
         print(f"  {memory.id} | {memory.content}")
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--real-llm",
@@ -130,6 +131,12 @@ def main() -> None:
         help="Use DeepSeek for both replies and extraction (requires DEEPSEEK_API_KEY).",
     )
     args = parser.parse_args()
+    if args.real_llm and not load_local_env():
+        print(
+            "DEEPSEEK_API_KEY is not configured. Set it in the environment or "
+            "create .env.local from .env.example."
+        )
+        return 1
     seed_path = (
         Path(__file__).resolve().parents[1] / "data" / "characters" / "si_001.yaml"
     )
@@ -171,7 +178,8 @@ def main() -> None:
         _print_turn(store, conversation, "PINN 最早是哪篇论文提出的？")
         _print_turn(store, conversation, "早上好")
         _print_turn(store, conversation, "我以后想买一台 Mac 做剪辑。")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

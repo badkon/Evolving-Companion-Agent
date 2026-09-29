@@ -9,6 +9,7 @@ from openai import APIError
 from pydantic import ValidationError
 
 from evolving_companion.llm import LLMClient
+from evolving_companion.local_env import load_local_env
 from evolving_companion.memory_extraction import MemoryExtractor
 
 FIXTURE_PATH = (
@@ -29,6 +30,12 @@ def _safe_error(error: Exception) -> str:
 
 
 def main() -> int:
+    if not load_local_env():
+        print(
+            "DEEPSEEK_API_KEY is not configured. Set it in the environment or "
+            "create .env.local from .env.example."
+        )
+        return 1
     with FIXTURE_PATH.open(encoding="utf-8") as fixture_file:
         cases: list[dict[str, Any]] = json.load(fixture_file)["cases"]
 

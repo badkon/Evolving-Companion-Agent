@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 开发阶段：**A3.4 — Memory Extraction Integration v0.1**。
+- 开发阶段：**A3.5 — Memory Conflict / Supersede / Consolidation v0.1**。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
@@ -19,9 +19,10 @@ A3.2e 为 experimental relevance gate benchmark：使用独立合成 fixture 比
 
 A3.2f 在同一实验 fixture 上评估确定性的 Memory Need 前置规则与 Selective Context Policy，并与 current-only / recent-context 基线比较。Semantic relevance 不等于 Memory need；直接拼接最近上下文可能造成 context pollution。fixture 结果不代表规则已证明可泛化。
 A3.3 将 Memory Need → Selective Context → semantic Top-10 → 本地 Cross-Encoder → Top-3 candidate memory 注入 Conversation/Prompt。没有全局 reranker threshold，也不做 salience/recency rerank；Prompt 将召回项表达为可忽略的候选上下文，不是系统事实。规则仍可能无法覆盖所有自然语言。人工运行 `python scripts/run_memory_injection_smoke.py` 可用临时 SQLite 和真实本地检索/重排模型检查注入；默认使用 fake LLM，传入 `--real-llm` 才调用 DeepSeek。
-A3.4 在主回复成功并归档后，对当前 user/assistant 消息对执行一次高精度 Memory Extraction；提取出的有效 `save` 候选通过现有 evidence 校验和 normalized active-content dedup 后写入 SQLite。顺序是 Recall existing memory → Generate response → Archive assistant → Extract new memory，因此本轮新记忆不会参与本轮 recall。Extraction 失败不影响主回复；`reject` / `uncertain` 不落库。当前不做 consolidation、冲突解决或自动 supersede。人工运行 `python scripts/run_memory_formation_smoke.py` 使用临时 SQLite；默认是 fake 主 LLM 与 deterministic extractor，决策仅用于流程演示；传入 `--real-llm` 才调用 DeepSeek。
+A3.4 在主回复成功并归档后，对当前 user/assistant 消息对执行一次高精度 Memory Extraction；提取出的有效 `save` 候选通过现有 evidence 校验和 normalized active-content dedup 后写入 SQLite。Extraction 失败不影响主回复；`reject` / `uncertain` 不落库。人工运行 `python scripts/run_memory_formation_smoke.py` 使用临时 SQLite；默认是 fake 主 LLM 与 deterministic extractor，决策仅用于流程演示；传入 `--real-llm` 才调用 DeepSeek。
+A3.5 对新保存的记忆检索最多 5 条相关 active 旧记忆，由 judge 在 `keep_both` / `supersede_old` / `uncertain` 中判断。只有明确当前状态替代才 supersede；旧记忆不删除、不改内容或 evidence，仍保留在数据库并从生产 active recall 排除。当前不做 memory merge 或 summary。人工运行 `python scripts/run_memory_consolidation_smoke.py` 使用临时 SQLite；默认 fake 回复与 deterministic extraction/judge；传入 `--real-llm` 才使用 DeepSeek 进行 extraction 和判断（本地检索/重排仍使用 CPU 模型）。Consolidation 失败不影响回复或新 memory。
 
-当前尚未实现 Memory Consolidation、自主行为或世界模拟。
+当前尚未实现 memory merge、summary、自主行为或世界模拟。
 
 ## 开发环境
 
@@ -65,21 +66,13 @@ ruff format --check .
 ```
 
 Python import 包名为 `evolving_companion`，源码位于 `src/evolving_companion/`。
-A1 使用 OpenAI Python SDK 作为 DeepSeek OpenAI-compatible API 的通信客户端；A2 使用 Pydantic 校验 Seed Data、PyYAML 读取 YAML；A3.2b 使用 sentence-transformers 加载本地 BGE 模型，并使用 NumPy 处理向量。运行时依赖为 `openai`、`numpy`、`pydantic`、`PyYAML` 和 `sentence-transformers`，开发依赖为 pytest 和 Ruff。CI 在 Python 3.12 上执行相同的安装与检查步骤。
+A1 使用 OpenAI Python SDK 作为 DeepSeek OpenAI-compatible API 的通信客户端；A2 使用 Pydantic 校验 Seed Data、PyYAML 读取 YAML；A3.2b 使用 sentence-transformers 加载本地 BGE 模型，并使用 NumPy 处理向量。运行时依赖为 `openai`、`numpy`、`pydantic`、`PyYAML`、`python-dotenv` 和 `sentence-transformers`，开发依赖为 pytest 和 Ruff。CI 在 Python 3.12 上执行相同的安装与检查步骤。
 
-设置 `DEEPSEEK_API_KEY` 环境变量后启动 CLI：
+首次运行真实 LLM 前，在仓库根目录复制 `.env.example` 为 `.env.local`，并填写 `DEEPSEEK_API_KEY`。`.env.local` 已被 Git 忽略，不应提交。已有的操作系统环境变量优先，不会被本地文件覆盖。
 
-Windows PowerShell：
-
-```powershell
-$env:DEEPSEEK_API_KEY = "your-api-key"
-python -m evolving_companion.cli
-```
-
-macOS / Linux：
+随后可直接启动 CLI：
 
 ```bash
-export DEEPSEEK_API_KEY="your-api-key"
 python -m evolving_companion.cli
 ```
 

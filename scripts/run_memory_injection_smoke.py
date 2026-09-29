@@ -11,6 +11,7 @@ from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.character_projection import CharacterProjector
 from evolving_companion.conversation import Conversation, TextCompletionClient
 from evolving_companion.llm import LLMClient
+from evolving_companion.local_env import load_local_env
 from evolving_companion.memory_recall import (
     MemoryRecallPort,
     MemoryRecallResult,
@@ -72,7 +73,7 @@ def print_case(name, recall, response, prompt_messages):
     print(f"Assistant: {response}")
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--real-llm",
@@ -80,6 +81,12 @@ def main() -> None:
         help="Use DeepSeek for replies (requires DEEPSEEK_API_KEY); otherwise use a fake client.",
     )
     args = parser.parse_args()
+    if args.real_llm and not load_local_env():
+        print(
+            "DEEPSEEK_API_KEY is not configured. Set it in the environment or "
+            "create .env.local from .env.example."
+        )
+        return 1
     seed_path = (
         Path(__file__).resolve().parents[1] / "data" / "characters" / "si_001.yaml"
     )
@@ -133,7 +140,8 @@ def main() -> None:
         conversation, recall, client = new_conversation()
         response = conversation.send("早上好。")
         print_case("D: greeting", recall, response, client.requests[-1])
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

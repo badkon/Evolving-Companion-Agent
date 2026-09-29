@@ -16,7 +16,10 @@ class LLMClient:
     def __init__(self, *, max_retries: int = 2) -> None:
         resolved_api_key = os.environ.get("DEEPSEEK_API_KEY")
         if not resolved_api_key:
-            raise ValueError("请先设置环境变量 DEEPSEEK_API_KEY。")
+            raise ValueError(
+                "DEEPSEEK_API_KEY is not configured. Set it in the environment or "
+                "create .env.local from .env.example."
+            )
         self._client = OpenAI(
             api_key=resolved_api_key,
             base_url=BASE_URL,
