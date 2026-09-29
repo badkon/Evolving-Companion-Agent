@@ -2,9 +2,10 @@
 
 from collections.abc import Mapping
 from typing import Protocol
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from evolving_companion.character_projection import ProjectedCharacterContext
+from evolving_companion.character_state import CharacterStateService
 from evolving_companion.memory_formation import (
     MemoryFormationPort,
     MemoryFormationResult,
@@ -34,12 +35,23 @@ class Conversation:
         archive_store: SQLiteStore,
         memory_recall_service: MemoryRecallPort | None = None,
         memory_formation_service: MemoryFormationPort | None = None,
+        *,
+        character_state_service: CharacterStateService | None = None,
+        character_id: UUID | None = None,
     ) -> None:
+        if (character_state_service is None) != (character_id is None):
+            raise ValueError(
+                "character_state_service and internal character_id are required together"
+            )
+        if character_id is not None and not isinstance(character_id, UUID):
+            raise TypeError("character_id must be identity.internal_id (UUID)")
         self._llm_client = llm_client
         self._prompt_builder = PromptBuilder(character_context)
         self._archive_store = archive_store
         self._memory_recall_service = memory_recall_service
         self._memory_formation_service = memory_formation_service
+        self._character_state_service = character_state_service
+        self._character_id = character_id
         self._last_memory_formation_result: MemoryFormationResult | None = None
         self.conversation_id = str(uuid4())
         self._history: list[Message] = []
@@ -58,6 +70,13 @@ class Conversation:
         user_archive_id = self._archive_store.append_archive_message(
             self.conversation_id, "user", user_message
         )
+        character_state = None
+        if self._character_state_service is not None:
+            # character_id is validated as the stable identity.internal_id UUID.
+            assert self._character_id is not None
+            character_state = self._character_state_service.get_state(
+                self._character_id
+            )
         recalled_memories: tuple[MemoryPromptCandidate, ...] = ()
         if self._memory_recall_service is not None:
             recall_result = self._memory_recall_service.recall(
@@ -65,7 +84,7 @@ class Conversation:
             )
             recalled_memories = recall_result.recalled_memories
         messages = self._prompt_builder.build(
-            self._history, user_message, recalled_memories
+            self._history, user_message, recalled_memories, character_state
         )
         reply = self._llm_client.complete(messages)
         assistant_archive_id = self._archive_store.append_archive_message(

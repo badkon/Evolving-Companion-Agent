@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 from evolving_companion.character_projection import ProjectedCharacterContext
+from evolving_companion.character_state import CharacterState
 
 Message = dict[str, str]
 
@@ -25,11 +26,15 @@ class PromptBuilder:
         history: Sequence[Mapping[str, str]],
         user_message: str,
         recalled_memories: Sequence[MemoryPromptCandidate] = (),
+        character_state: CharacterState | None = None,
     ) -> list[Message]:
         system_instructions = self._build_system_instructions()
         character_context = self._build_character_context()
+        state_context = self._build_state_context(character_state)
         memory_context = self._build_memory_context(recalled_memories)
         system_content = f"{system_instructions}\n\n{character_context}"
+        if state_context:
+            system_content = f"{system_content}\n\n{state_context}"
         if memory_context:
             system_content = f"{system_content}\n\n{memory_context}"
         messages: list[Message] = [
@@ -43,6 +48,31 @@ class PromptBuilder:
         )
         messages.append({"role": "user", "content": user_message})
         return messages
+
+    @staticmethod
+    def _build_state_context(state: CharacterState | None) -> str:
+        if state is None:
+            return ""
+        activity = state.current_activity or "未特别记录"
+        labels = {
+            "low": "偏低",
+            "medium": "适中",
+            "high": "较高",
+            "scattered": "有些分散",
+            "normal": "平常",
+            "focused": "比较集中",
+            "neutral": "平稳",
+            "withdrawn": "偏安静",
+            "engaged": "较投入",
+        }
+        return "\n".join(
+            (
+                "【玲当前状态】",
+                f"精力：{labels[state.energy]}；注意力：{labels[state.attention]}；心境倾向：{labels[state.mood_tendency]}；社交投入：{labels[state.social_engagement]}。",
+                f"当前活动：{activity}。",
+                "这些只是当前状态线索，可轻微影响表达方式；不代表人格、身份或长期记忆。",
+            )
+        )
 
     @staticmethod
     def _build_memory_context(

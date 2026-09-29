@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from evolving_companion.character_state import CharacterState
+
 MEMORY_TYPES = frozenset({"episodic", "semantic", "self", "relationship"})
 MEMORY_SOURCES = frozenset({"explicit", "observed", "inferred"})
 MEMORY_SALIENCES = frozenset({"low", "medium", "high"})
@@ -59,6 +61,18 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
     embedding BLOB NOT NULL,
     created_at TEXT NOT NULL,
     PRIMARY KEY (memory_id, model_name)
+);
+
+CREATE TABLE IF NOT EXISTS character_state (
+    character_id TEXT PRIMARY KEY,
+    energy TEXT NOT NULL CHECK (energy IN ('low', 'medium', 'high')),
+    attention TEXT NOT NULL CHECK (attention IN ('scattered', 'normal', 'focused')),
+    mood_tendency TEXT NOT NULL CHECK (mood_tendency IN ('low', 'neutral', 'positive')),
+    social_engagement TEXT NOT NULL CHECK (
+        social_engagement IN ('withdrawn', 'normal', 'engaged')
+    ),
+    current_activity TEXT,
+    updated_at TEXT NOT NULL
 );
 """
 
@@ -132,6 +146,45 @@ class SQLiteStore:
         connection.execute("PRAGMA foreign_keys = ON")
         connection.row_factory = sqlite3.Row
         return connection
+
+    def get_character_state(self, character_id: UUID) -> CharacterState | None:
+        """Load one state using the Character's stable internal UUID."""
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM character_state WHERE character_id = ?",
+                (str(character_id),),
+            ).fetchone()
+        if row is None:
+            return None
+        values = dict(row)
+        values["updated_at"] = datetime.fromisoformat(values["updated_at"])
+        return CharacterState.model_validate(values)
+
+    def upsert_character_state(self, state: CharacterState) -> None:
+        """Insert or replace the current state for its internal UUID."""
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """INSERT INTO character_state
+                   (character_id, energy, attention, mood_tendency,
+                    social_engagement, current_activity, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(character_id) DO UPDATE SET
+                       energy = excluded.energy,
+                       attention = excluded.attention,
+                       mood_tendency = excluded.mood_tendency,
+                       social_engagement = excluded.social_engagement,
+                       current_activity = excluded.current_activity,
+                       updated_at = excluded.updated_at""",
+                (
+                    str(state.character_id),
+                    state.energy,
+                    state.attention,
+                    state.mood_tendency,
+                    state.social_engagement,
+                    state.current_activity,
+                    state.updated_at.astimezone(timezone.utc).isoformat(),
+                ),
+            )
 
     def append_archive_message(
         self, conversation_id: str, role: str, content: str

@@ -1,9 +1,18 @@
 """Minimal multi-turn terminal chat for SI-001."""
 
 from pathlib import Path
+from typing import cast
+from uuid import UUID
 
 from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.character_projection import CharacterProjector
+from evolving_companion.character_state import (
+    Attention,
+    CharacterStateService,
+    Energy,
+    MoodTendency,
+    SocialEngagement,
+)
 from evolving_companion.conversation import Conversation
 from evolving_companion.llm import LLMClient
 from evolving_companion.local_env import load_local_env
@@ -34,6 +43,7 @@ def main() -> None:
         seed_data = load_character_seed_data(seed_path)
         character_context = CharacterProjector().project(seed_data)
         store = SQLiteStore()
+        state_service = CharacterStateService(store)
         retriever = MemoryRetriever(store)
         recall_service = MemoryRecallService(retriever, MemoryReranker())
         llm_client = LLMClient()
@@ -49,6 +59,8 @@ def main() -> None:
             store,
             memory_recall_service=recall_service,
             memory_formation_service=formation_service,
+            character_state_service=state_service,
+            character_id=seed_data.identity.internal_id,
         )
     except ValueError as error:
         print(error)
@@ -58,6 +70,7 @@ def main() -> None:
         return
 
     print("和玲聊天。输入 /exit 退出。")
+    print("开发状态命令：/state [energy|attention|mood|social|activity …]")
     while True:
         try:
             user_message = input("你：").strip()
@@ -69,11 +82,78 @@ def main() -> None:
             break
         if not user_message:
             continue
+        if user_message == "/state" or user_message.startswith("/state "):
+            _handle_state_command(
+                user_message, state_service, seed_data.identity.internal_id
+            )
+            continue
 
         try:
             print(f"玲：{conversation.send(user_message)}")
         except Exception:  # Do not expose provider details or credentials in the CLI.
             print("请求失败，请检查网络与 DeepSeek API 配置后重试。")
+
+
+def _handle_state_command(
+    command: str, state_service: CharacterStateService, character_id: UUID
+) -> None:
+    """Small local-only developer command for explicit state inspection/updates."""
+    parts = command.split(maxsplit=2)
+    try:
+        if len(parts) == 1:
+            state = state_service.get_state(character_id)
+            print(
+                "当前状态："
+                f"energy={state.energy}, attention={state.attention}, "
+                f"mood={state.mood_tendency}, social={state.social_engagement}, "
+                f"activity={state.current_activity or '无'}"
+            )
+            return
+        if len(parts) < 3:
+            raise ValueError(
+                "用法：/state <energy|attention|mood|social|activity> <值>"
+            )
+        field, value = parts[1], parts[2]
+        if field == "energy":
+            if value not in {"low", "medium", "high"}:
+                raise ValueError("energy 可选 low、medium、high。")
+            state = state_service.update_state(character_id, energy=cast(Energy, value))
+        elif field == "attention":
+            if value not in {"scattered", "normal", "focused"}:
+                raise ValueError("attention 可选 scattered、normal、focused。")
+            state = state_service.update_state(
+                character_id, attention=cast(Attention, value)
+            )
+        elif field == "mood":
+            if value not in {"low", "neutral", "positive"}:
+                raise ValueError("mood 可选 low、neutral、positive。")
+            state = state_service.update_state(
+                character_id, mood_tendency=cast(MoodTendency, value)
+            )
+        elif field == "social":
+            if value not in {"withdrawn", "normal", "engaged"}:
+                raise ValueError("social 可选 withdrawn、normal、engaged。")
+            state = state_service.update_state(
+                character_id, social_engagement=cast(SocialEngagement, value)
+            )
+        elif field == "activity":
+            state = state_service.update_state(
+                character_id,
+                current_activity=None if value == "none" else value,
+            )
+        else:
+            raise ValueError(
+                "未知状态字段；可用 energy、attention、mood、social、activity。"
+            )
+    except (ValueError, TypeError) as error:
+        print(f"状态命令无效：{error}")
+        return
+    print(
+        "状态已更新："
+        f"energy={state.energy}, attention={state.attention}, "
+        f"mood={state.mood_tendency}, social={state.social_engagement}, "
+        f"activity={state.current_activity or '无'}"
+    )
 
 
 if __name__ == "__main__":

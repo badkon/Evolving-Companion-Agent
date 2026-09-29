@@ -38,6 +38,7 @@ def test_store_initializes_three_tables_in_temporary_database(tmp_path: Path) ->
         "memory_evidence",
         "memory_supersessions",
         "memory_embeddings",
+        "character_state",
     } <= names
 
 
