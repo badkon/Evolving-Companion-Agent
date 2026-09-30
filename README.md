@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 开发阶段：**B3 — Personal Life Scaffold v0.1 — Complete**。
+- 开发阶段：**B4 — World State v0.1 — Complete**。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
@@ -23,6 +23,8 @@ B2 按四个独立字段时间锚点将短期 State 归一到工程中性 baseli
 当前尚未实现 memory merge、summary、自主行为或世界模拟。
 
 B3 增加独立持久化的 Personal Life Context，按 Internal UUID 绑定。已有生活设定仅用于首次初始化，当前位置未定义时保持空值；位置和身份只允许显式更新，不由时间或 LLM 自动推断，也不自动形成 Memory。详见 [B3 Personal Life Scaffold](docs/b3_personal_life_scaffold_v01.md)。
+
+B4 建立最小静态 World Place 层，固定 UUID seed 初始化到 SQLite；Life 的地点关联改为 World UUID，并兼容迁移 B3 旧字符串。Prompt 只解析相关地点名称，不自动获得 World description 或亲历记忆。详见 [B4 World State](docs/b4_world_state_v01.md)。未实现动态世界模拟。
 
 ## 开发环境
 
@@ -84,6 +86,8 @@ CLI 中 `/state` 及其参数是本地开发调试命令，不会调用 LLM。
 离线检查 B2 状态归一：`python scripts/run_temporal_state_reconciliation_smoke.py`。
 CLI 中 `/life` 显示生活上下文；`/life location 学校`、`/life role 学生` 显式更新，值为 `none` 时清空对应字段。这些命令不会调用 LLM。
 离线检查 B3 生活支架：`python scripts/run_personal_life_smoke.py`。
+B4 中 `/world` 列出地点；`/life location <canonical name>` 要求精确唯一匹配，或使用 `/life location-id <uuid>`。家的名称为“住宅区的家”，不按模糊别名匹配。
+离线检查 B4 地点与引用：`python scripts/run_world_state_smoke.py`。
 
 ## 设计文档
 

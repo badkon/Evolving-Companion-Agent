@@ -1,6 +1,7 @@
 """Explicit, persisted Personal Life Context for one Character."""
 
 from datetime import datetime, timezone
+from dataclasses import dataclass
 from enum import Enum
 from typing import Literal, Protocol
 from uuid import UUID
@@ -8,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from evolving_companion.clock import Clock, SystemClock
+from evolving_companion.world import WorldEntity, WorldEntityService
 
 LifeStage = Literal["student", "worker", "unemployed", "unknown"]
 
@@ -18,17 +20,13 @@ class LifeContextData(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     life_stage: LifeStage = "unknown"
-    home_reference: str | None = None
-    school_reference: str | None = None
-    primary_area_reference: str | None = None
-    current_location_reference: str | None = None
+    home_entity_id: UUID | None = None
+    school_entity_id: UUID | None = None
+    primary_area_entity_id: UUID | None = None
+    current_location_entity_id: UUID | None = None
     current_role: str | None = None
 
     @field_validator(
-        "home_reference",
-        "school_reference",
-        "primary_area_reference",
-        "current_location_reference",
         "current_role",
     )
     @classmethod
@@ -58,7 +56,20 @@ class _Unchanged(Enum):
 UNCHANGED = _Unchanged.token
 
 
+@dataclass(frozen=True)
+class ProjectedLifeContext:
+    """Display-only context: no World metadata or authoritative identity fields."""
+
+    life_stage: LifeStage
+    current_role: str | None
+    home_reference: str | None
+    school_reference: str | None
+    primary_area_reference: str | None
+    current_location_reference: str | None
+
+
 class CharacterLifeStore(Protocol):
+    def get_world_entity(self, entity_id: UUID) -> WorldEntity | None: ...
     def get_character_life_context(
         self, character_id: UUID
     ) -> CharacterLifeContext | None: ...
@@ -97,28 +108,58 @@ class CharacterLifeService:
                     "updated_at": self._clock.now_utc(),
                 }
             )
+            self._validate_places(context)
             self._store.upsert_character_life_context(context)
         return context
+
+    def _validate_places(self, context: CharacterLifeContext) -> None:
+        for value in (
+            context.home_entity_id,
+            context.school_entity_id,
+            context.primary_area_entity_id,
+            context.current_location_entity_id,
+        ):
+            if value is not None:
+                entity = self._store.get_world_entity(value)
+                if entity is None or entity.entity_type != "place":
+                    raise ValueError("Life reference must point to an existing Place")
+
+    def project_context(
+        self, character_id: UUID, world: WorldEntityService
+    ) -> ProjectedLifeContext:
+        context = self.get_life_context(character_id)
+
+        def name(value: UUID | None) -> str | None:
+            return world.resolve_display_name(value) if value is not None else None
+
+        return ProjectedLifeContext(
+            context.life_stage,
+            context.current_role,
+            name(context.home_entity_id),
+            name(context.school_entity_id),
+            name(context.primary_area_entity_id),
+            name(context.current_location_entity_id),
+        )
 
     def update_life_context(
         self,
         character_id: UUID,
         *,
         life_stage: LifeStage | _Unchanged = UNCHANGED,
-        home_reference: str | None | _Unchanged = UNCHANGED,
-        school_reference: str | None | _Unchanged = UNCHANGED,
-        primary_area_reference: str | None | _Unchanged = UNCHANGED,
-        current_location_reference: str | None | _Unchanged = UNCHANGED,
+        home_entity_id: UUID | None | _Unchanged = UNCHANGED,
+        school_entity_id: UUID | None | _Unchanged = UNCHANGED,
+        primary_area_entity_id: UUID | None | _Unchanged = UNCHANGED,
+        current_location_entity_id: UUID | None | _Unchanged = UNCHANGED,
         current_role: str | None | _Unchanged = UNCHANGED,
     ) -> CharacterLifeContext:
         current = self.get_life_context(character_id)
         values = current.model_dump()
         for name, value in (
             ("life_stage", life_stage),
-            ("home_reference", home_reference),
-            ("school_reference", school_reference),
-            ("primary_area_reference", primary_area_reference),
-            ("current_location_reference", current_location_reference),
+            ("home_entity_id", home_entity_id),
+            ("school_entity_id", school_entity_id),
+            ("primary_area_entity_id", primary_area_entity_id),
+            ("current_location_entity_id", current_location_entity_id),
             ("current_role", current_role),
         ):
             if value is not UNCHANGED:
@@ -126,6 +167,7 @@ class CharacterLifeService:
         # Validate before comparing or persisting; invalid input never creates
         # a partially applied update.
         candidate = CharacterLifeContext.model_validate(values)
+        self._validate_places(candidate)
         if candidate == current:
             return current
         now = self._clock.now_utc()

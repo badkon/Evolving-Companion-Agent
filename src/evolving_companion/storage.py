@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 
 from evolving_companion.character_state import CharacterState, TEMPORAL_ANCHORS
 from evolving_companion.character_life import CharacterLifeContext
+from evolving_companion.world import WorldEntity
 
 MEMORY_TYPES = frozenset({"episodic", "semantic", "self", "relationship"})
 MEMORY_SOURCES = frozenset({"explicit", "observed", "inferred"})
@@ -86,6 +87,17 @@ CREATE TABLE IF NOT EXISTS character_runtime (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS world_entities (
+    entity_id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL CHECK (entity_type = 'place'),
+    canonical_name TEXT NOT NULL CHECK (length(trim(canonical_name)) > 0),
+    parent_entity_id TEXT REFERENCES world_entities(entity_id) DEFERRABLE INITIALLY DEFERRED,
+    description TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (parent_entity_id IS NULL OR parent_entity_id <> entity_id)
+);
+
 CREATE TABLE IF NOT EXISTS character_life_context (
     character_id TEXT PRIMARY KEY,
     life_stage TEXT NOT NULL CHECK (life_stage IN ('student', 'worker', 'unemployed', 'unknown')),
@@ -94,7 +106,12 @@ CREATE TABLE IF NOT EXISTS character_life_context (
     primary_area_reference TEXT,
     current_location_reference TEXT,
     current_role TEXT,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    home_entity_id TEXT REFERENCES world_entities(entity_id),
+    school_entity_id TEXT REFERENCES world_entities(entity_id),
+    primary_area_entity_id TEXT REFERENCES world_entities(entity_id),
+    current_location_entity_id TEXT REFERENCES world_entities(entity_id),
+    world_references_migrated INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -178,6 +195,91 @@ class SQLiteStore:
                     connection.execute(
                         f"UPDATE character_state SET {anchor} = updated_at WHERE {anchor} IS NULL"
                     )
+                life_columns = {
+                    row["name"]
+                    for row in connection.execute(
+                        "PRAGMA table_info(character_life_context)"
+                    )
+                }
+                for name in (
+                    "home_entity_id",
+                    "school_entity_id",
+                    "primary_area_entity_id",
+                    "current_location_entity_id",
+                ):
+                    if name not in life_columns:
+                        connection.execute(
+                            f"ALTER TABLE character_life_context ADD COLUMN {name} "
+                            "TEXT REFERENCES world_entities(entity_id)"
+                        )
+                if "world_references_migrated" not in life_columns:
+                    connection.execute(
+                        "ALTER TABLE character_life_context ADD COLUMN "
+                        "world_references_migrated INTEGER NOT NULL DEFAULT 0"
+                    )
+
+    def get_world_entity(self, entity_id: UUID) -> WorldEntity | None:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM world_entities WHERE entity_id = ?", (str(entity_id),)
+            ).fetchone()
+        return WorldEntity.model_validate(dict(row)) if row is not None else None
+
+    def list_world_entities(self) -> tuple[WorldEntity, ...]:
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT * FROM world_entities ORDER BY canonical_name, entity_id"
+            ).fetchall()
+        return tuple(WorldEntity.model_validate(dict(row)) for row in rows)
+
+    def insert_world_seed(self, entities: tuple[WorldEntity, ...]) -> None:
+        with closing(self._connect()) as connection, connection:
+            for entity in entities:
+                connection.execute(
+                    """INSERT INTO world_entities VALUES (?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(entity_id) DO NOTHING""",
+                    (
+                        str(entity.entity_id),
+                        entity.entity_type,
+                        entity.canonical_name,
+                        str(entity.parent_entity_id)
+                        if entity.parent_entity_id
+                        else None,
+                        entity.description,
+                        entity.created_at.isoformat(),
+                        entity.updated_at.isoformat(),
+                    ),
+                )
+
+    def migrate_life_references(
+        self, names: dict[str, tuple[UUID, ...]]
+    ) -> tuple[str, ...]:
+        """Convert legacy names once; retain original columns for inspection."""
+        diagnostics: list[str] = []
+        fields = ("home", "school", "primary_area", "current_location")
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                "SELECT * FROM character_life_context WHERE world_references_migrated = 0"
+            ).fetchall()
+            for row in rows:
+                values: list[str | None] = []
+                for field in fields:
+                    legacy = row[f"{field}_reference"]
+                    matches = names.get(legacy, ()) if legacy is not None else ()
+                    values.append(str(matches[0]) if len(matches) == 1 else None)
+                    if legacy is not None and len(matches) != 1:
+                        diagnostics.append(
+                            f"unresolved_legacy_place:{row['character_id']}:{field}"
+                        )
+                connection.execute(
+                    """UPDATE character_life_context SET home_entity_id = ?,
+                       school_entity_id = ?, primary_area_entity_id = ?,
+                       current_location_entity_id = ?, world_references_migrated = 1
+                       WHERE character_id = ?""",
+                    (*values, row["character_id"]),
+                )
+        return tuple(diagnostics)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path)
@@ -198,35 +300,45 @@ class SQLiteStore:
     ) -> CharacterLifeContext | None:
         with closing(self._connect()) as connection:
             row = connection.execute(
-                "SELECT * FROM character_life_context WHERE character_id = ?",
+                """SELECT character_id, life_stage, home_entity_id, school_entity_id,
+                   primary_area_entity_id, current_location_entity_id, current_role, updated_at,
+                   world_references_migrated FROM character_life_context WHERE character_id = ?""",
                 (str(character_id),),
             ).fetchone()
-        return (
-            CharacterLifeContext.model_validate(dict(row)) if row is not None else None
-        )
+        if row is None:
+            return None
+        values = dict(row)
+        if not values.pop("world_references_migrated"):
+            raise ValueError("Initialize World seed before reading legacy Life Context")
+        return CharacterLifeContext.model_validate(values)
 
     def upsert_character_life_context(self, context: CharacterLifeContext) -> None:
         with closing(self._connect()) as connection, connection:
             connection.execute(
                 """INSERT INTO character_life_context
-                   (character_id, life_stage, home_reference, school_reference,
-                    primary_area_reference, current_location_reference, current_role, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   (character_id, life_stage, home_entity_id, school_entity_id,
+                    primary_area_entity_id, current_location_entity_id, current_role, updated_at,
+                    world_references_migrated)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
                    ON CONFLICT(character_id) DO UPDATE SET
                        life_stage = excluded.life_stage,
-                       home_reference = excluded.home_reference,
-                       school_reference = excluded.school_reference,
-                       primary_area_reference = excluded.primary_area_reference,
-                       current_location_reference = excluded.current_location_reference,
+                       home_entity_id = excluded.home_entity_id,
+                       school_entity_id = excluded.school_entity_id,
+                       primary_area_entity_id = excluded.primary_area_entity_id,
+                       current_location_entity_id = excluded.current_location_entity_id,
                        current_role = excluded.current_role,
                        updated_at = excluded.updated_at""",
                 (
                     str(context.character_id),
                     context.life_stage,
-                    context.home_reference,
-                    context.school_reference,
-                    context.primary_area_reference,
-                    context.current_location_reference,
+                    str(context.home_entity_id) if context.home_entity_id else None,
+                    str(context.school_entity_id) if context.school_entity_id else None,
+                    str(context.primary_area_entity_id)
+                    if context.primary_area_entity_id
+                    else None,
+                    str(context.current_location_entity_id)
+                    if context.current_location_entity_id
+                    else None,
                     context.current_role,
                     context.updated_at.astimezone(timezone.utc).isoformat(),
                 ),

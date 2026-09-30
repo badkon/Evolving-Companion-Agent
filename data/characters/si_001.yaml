@@ -4,10 +4,10 @@ timezone: "Asia/Shanghai" # 开发期 Character 时区配置，不代表用户�
 # 来源：Character Design 第 3 节学校/居住与第 6 节教育生活区；仅用于首次初始化。
 initial_life_context:
   life_stage: student
-  home_reference: "住宅区的家"
-  school_reference: "学校"
-  primary_area_reference: "教育生活区"
-  current_location_reference: null # 设计未规定此刻的位置，不能自动推断在家或学校
+  home_entity_id: "c4cbf452-3639-4dd8-9d75-f4dc4b73bf14"
+  school_entity_id: "154b9f23-bc1d-4ea3-914b-a29a6bd7e328"
+  primary_area_entity_id: "e965996e-20f9-4c3f-a10e-8cf3c9653e2b"
+  current_location_entity_id: null # 设计未规定此刻的位置，不能自动推断在家或学校
   current_role: "学生"
 
 identity:

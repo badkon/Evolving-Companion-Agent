@@ -41,6 +41,7 @@ from evolving_companion.memory_retrieval import MemoryRetriever
 from evolving_companion.storage import SQLiteStore
 from evolving_companion.clock import SystemClock
 from evolving_companion.time_model import CharacterTimeService, format_offline_duration
+from evolving_companion.world import WorldEntityService, load_world_seed
 
 
 def main() -> None:
@@ -59,6 +60,12 @@ def main() -> None:
         character_context = CharacterProjector().project(seed_data)
         store = SQLiteStore()
         clock = SystemClock()
+        world = WorldEntityService(store, clock)
+        diagnostics = world.initialize_seed_entities(
+            load_world_seed(seed_path.parents[1] / "worlds/si_world.yaml")
+        )
+        for diagnostic in diagnostics:
+            print(f"World migration: {diagnostic}")
         state_service = CharacterStateService(store, clock)
         life_service = CharacterLifeService(
             store, seed_data.identity.internal_id, seed_data.initial_life_context, clock
@@ -102,6 +109,7 @@ def main() -> None:
     print("开发状态命令：/state [energy|attention|mood|social|activity|event …]")
     print("开发时间命令：/time")
     print("开发生活命令：/life [location|role <值>]；none 清空字段")
+    print("开发地点命令：/world；/life location-id <uuid>")
     while True:
         try:
             user_message = input("你：").strip()
@@ -140,9 +148,13 @@ def main() -> None:
             print(f"Last interaction: {snapshot.last_interaction_at or '无记录'}")
             print(f"Offline duration: {offline}")
             continue
+        if user_message == "/world":
+            for entity in world.list_entities():
+                print(f"{entity.canonical_name} | {entity.entity_type}")
+            continue
         if user_message == "/life" or user_message.startswith("/life "):
             _handle_life_command(
-                user_message, life_service, seed_data.identity.internal_id
+                user_message, life_service, seed_data.identity.internal_id, world
             )
             continue
 
@@ -153,7 +165,10 @@ def main() -> None:
 
 
 def _handle_life_command(
-    command: str, life_service: CharacterLifeService, character_id: UUID
+    command: str,
+    life_service: CharacterLifeService,
+    character_id: UUID,
+    world: WorldEntityService,
 ) -> None:
     """Small local developer interface for explicit Life Context updates."""
     parts = command.split(maxsplit=2)
@@ -163,7 +178,13 @@ def _handle_life_command(
         elif len(parts) == 3 and parts[1] == "location":
             context = life_service.update_life_context(
                 character_id,
-                current_location_reference=None if parts[2] == "none" else parts[2],
+                current_location_entity_id=None
+                if parts[2] == "none"
+                else world.resolve_place_name(parts[2]),
+            )
+        elif len(parts) == 3 and parts[1] == "location-id":
+            context = life_service.update_life_context(
+                character_id, current_location_entity_id=UUID(parts[2])
             )
         elif len(parts) == 3 and parts[1] == "role":
             context = life_service.update_life_context(
@@ -174,10 +195,11 @@ def _handle_life_command(
     except ValueError as error:
         print(f"生活命令无效：{error}")
         return
+    display = life_service.project_context(character_id, world)
     print(
         f"生活上下文：life_stage={context.life_stage}, role={context.current_role or '无'}, "
-        f"home={context.home_reference or '无'}, school={context.school_reference or '无'}, "
-        f"area={context.primary_area_reference or '无'}, location={context.current_location_reference or '无'}"
+        f"home={display.home_reference or '无'}, school={display.school_reference or '无'}, "
+        f"area={display.primary_area_reference or '无'}, location={display.current_location_reference or '无'}"
     )
 
 

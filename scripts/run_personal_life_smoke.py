@@ -13,6 +13,7 @@ from evolving_companion.character_state import CharacterStateService
 from evolving_companion.clock import FixedClock
 from evolving_companion.prompting import PromptBuilder
 from evolving_companion.storage import SQLiteStore
+from evolving_companion.world import WorldEntityService, load_world_seed
 
 
 def main() -> None:
@@ -23,22 +24,28 @@ def main() -> None:
     with TemporaryDirectory(prefix="si001-personal-life-") as directory:
         path = Path(directory) / "smoke.db"
         store = SQLiteStore(path)
+        world = WorldEntityService(store, clock)
+        world.initialize_seed_entities(
+            load_world_seed(root / "data/worlds/si_world.yaml")
+        )
         state = CharacterStateService(store, clock).get_state(key)
         life = CharacterLifeService(store, key, seed.initial_life_context, clock)
         initial = life.get_life_context(key)
         for name in (
             "life_stage",
             "current_role",
-            "home_reference",
-            "school_reference",
-            "primary_area_reference",
-            "current_location_reference",
+            "home_entity_id",
+            "school_entity_id",
+            "primary_area_entity_id",
+            "current_location_entity_id",
         ):
             print(f"{name}: {getattr(initial, name)}")
         assert initial.life_stage == "student"
-        assert initial.current_location_reference is None
+        assert initial.current_location_entity_id is None
         clock.advance(hours=1)
-        updated = life.update_life_context(key, current_location_reference="学校")
+        updated = life.update_life_context(
+            key, current_location_entity_id=world.resolve_place_name("学校")
+        )
         assert life.get_life_context(key) == updated
         reopened = CharacterLifeService(
             SQLiteStore(path), key, seed.initial_life_context, clock
@@ -47,7 +54,9 @@ def main() -> None:
         clock.advance(hours=12)
         assert reopened.get_life_context(key) == updated
         prompt = PromptBuilder(CharacterProjector().project(seed)).build(
-            [], "你在哪里？", character_life_context=reopened.get_life_context(key)
+            [],
+            "你在哪里？",
+            character_life_context=reopened.project_context(key, world),
         )[0]["content"]
         assert "【当前生活上下文】" in prompt and "当前地点：学校" in prompt
         assert str(key) not in prompt and "updated_at" not in prompt

@@ -5,7 +5,7 @@ from typing import Protocol
 
 from evolving_companion.character_projection import ProjectedCharacterContext
 from evolving_companion.character_state import CharacterState
-from evolving_companion.character_life import CharacterLifeContext
+from evolving_companion.character_life import ProjectedLifeContext
 from evolving_companion.time_model import CharacterTimeSnapshot, format_offline_duration
 
 Message = dict[str, str]
@@ -30,7 +30,7 @@ class PromptBuilder:
         recalled_memories: Sequence[MemoryPromptCandidate] = (),
         character_state: CharacterState | None = None,
         character_time: CharacterTimeSnapshot | None = None,
-        character_life_context: CharacterLifeContext | None = None,
+        character_life_context: ProjectedLifeContext | None = None,
     ) -> list[Message]:
         system_instructions = self._build_system_instructions()
         character_context = self._build_character_context()
@@ -60,7 +60,7 @@ class PromptBuilder:
         return messages
 
     @staticmethod
-    def _build_life_context(context: CharacterLifeContext | None) -> str:
+    def _build_life_context(context: ProjectedLifeContext | None) -> str:
         if context is None:
             return ""
         lines: list[str] = []

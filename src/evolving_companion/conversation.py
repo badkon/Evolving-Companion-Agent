@@ -23,6 +23,7 @@ from evolving_companion.prompting import (
 from evolving_companion.storage import SQLiteStore
 from evolving_companion.clock import Clock, SystemClock
 from evolving_companion.time_model import CharacterTimeService
+from evolving_companion.world import WorldEntityService
 
 
 class TextCompletionClient(Protocol):
@@ -120,8 +121,8 @@ class Conversation:
         life_context = None
         if self._character_life_service is not None:
             assert self._character_id is not None
-            life_context = self._character_life_service.get_life_context(
-                self._character_id
+            life_context = self._character_life_service.project_context(
+                self._character_id, WorldEntityService(self._archive_store, self._clock)
             )
         recalled_memories: tuple[MemoryPromptCandidate, ...] = ()
         if self._memory_recall_service is not None:

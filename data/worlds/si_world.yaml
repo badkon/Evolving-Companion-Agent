@@ -1,0 +1,11 @@
+# Character Design 第 3 节与第 6 节已有地点；仅加入 Life Context 当前需要的引用。
+entities:
+  - entity_id: "e965996e-20f9-4c3f-a10e-8cf3c9653e2b"
+    canonical_name: "教育生活区"
+  - entity_id: "4a56aecb-ed50-46d0-8ea2-eae7759b2b43"
+    canonical_name: "住宅区"
+  - entity_id: "c4cbf452-3639-4dd8-9d75-f4dc4b73bf14"
+    canonical_name: "住宅区的家"
+    parent_entity_id: "4a56aecb-ed50-46d0-8ea2-eae7759b2b43"
+  - entity_id: "154b9f23-bc1d-4ea3-914b-a29a6bd7e328"
+    canonical_name: "学校"

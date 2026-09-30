@@ -26,6 +26,22 @@ from evolving_companion.clock import FixedClock
 from evolving_companion.conversation import Conversation
 from evolving_companion.prompting import Message, PromptBuilder
 from evolving_companion.storage import SQLiteStore
+from evolving_companion.world import WorldEntityService, load_world_seed
+
+HOME = UUID("c4cbf452-3639-4dd8-9d75-f4dc4b73bf14")
+SCHOOL = UUID("154b9f23-bc1d-4ea3-914b-a29a6bd7e328")
+AREA = UUID("e965996e-20f9-4c3f-a10e-8cf3c9653e2b")
+
+
+def initialize_world(store: SQLiteStore) -> WorldEntityService:
+    world = WorldEntityService(store, FixedClock(T0))
+    world.initialize_seed_entities(
+        load_world_seed(
+            Path(__file__).resolve().parents[1] / "data/worlds/si_world.yaml"
+        )
+    )
+    return world
+
 
 T0 = datetime(2026, 9, 30, tzinfo=timezone.utc)
 
@@ -42,6 +58,7 @@ def make_service(
 ) -> tuple[SQLiteStore, FixedClock, CharacterLifeService]:
     store = SQLiteStore(path)
     clock = FixedClock(T0)
+    initialize_world(store)
     return (
         store,
         clock,
@@ -59,10 +76,10 @@ def test_seed_defaults_initialize_once_with_internal_uuid(
     context = service.get_life_context(key)
     assert context.character_id == key
     assert context.life_stage == "student" and context.current_role == "学生"
-    assert context.home_reference == "住宅区的家"
-    assert context.school_reference == "学校"
-    assert context.primary_area_reference == "教育生活区"
-    assert context.current_location_reference is None
+    assert context.home_entity_id == HOME
+    assert context.school_entity_id == SCHOOL
+    assert context.primary_area_entity_id == AREA
+    assert context.current_location_entity_id is None
     assert context.updated_at == T0
     with closing(sqlite3.connect(store.path)) as connection:
         row = connection.execute(
@@ -85,19 +102,19 @@ def test_partial_update_clear_and_restart_preserve_runtime(
     key = seed.identity.internal_id
     initial = service.get_life_context(key)
     clock.advance(hours=1)
-    changed = service.update_life_context(key, current_location_reference="学校")
-    assert changed.current_location_reference == "学校"
+    changed = service.update_life_context(key, current_location_entity_id=SCHOOL)
+    assert changed.current_location_entity_id == SCHOOL
     assert changed.updated_at == clock.now_utc()
     assert changed.model_dump(
-        exclude={"current_location_reference", "updated_at"}
-    ) == initial.model_dump(exclude={"current_location_reference", "updated_at"})
+        exclude={"current_location_entity_id", "updated_at"}
+    ) == initial.model_dump(exclude={"current_location_entity_id", "updated_at"})
     restarted = CharacterLifeService(SQLiteStore(path), key, LifeContextData(), clock)
     assert restarted.get_life_context(key) == changed
     cleared = service.update_life_context(
-        key, current_location_reference=None, current_role=None
+        key, current_location_entity_id=None, current_role=None
     )
-    assert cleared.current_location_reference is None and cleared.current_role is None
-    assert cleared.home_reference == initial.home_reference
+    assert cleared.current_location_entity_id is None and cleared.current_role is None
+    assert cleared.home_entity_id == initial.home_entity_id
     assert (
         CharacterLifeService(
             SQLiteStore(store.path), key, seed.initial_life_context, clock
@@ -111,11 +128,11 @@ def test_read_noop_and_time_passage_do_not_refresh_or_move_context(
 ) -> None:
     _, clock, service = make_service(tmp_path / "life.db", seed)
     key = seed.identity.internal_id
-    before = service.update_life_context(key, current_location_reference="学校")
+    before = service.update_life_context(key, current_location_entity_id=SCHOOL)
     clock.advance(hours=12)
     assert service.get_life_context(key) == before
     assert service.update_life_context(key) == before
-    assert service.update_life_context(key, current_location_reference="学校") == before
+    assert service.update_life_context(key, current_location_entity_id=SCHOOL) == before
     assert service.get_life_context(key).updated_at == T0
 
 
@@ -125,16 +142,16 @@ def test_all_nullable_fields_can_be_explicitly_cleared(
     _, _, service = make_service(tmp_path / "life.db", seed)
     context = service.update_life_context(
         seed.identity.internal_id,
-        home_reference=None,
-        school_reference=None,
-        primary_area_reference=None,
-        current_location_reference=None,
+        home_entity_id=None,
+        school_entity_id=None,
+        primary_area_entity_id=None,
+        current_location_entity_id=None,
         current_role=None,
     )
-    assert context.home_reference is None and context.school_reference is None
+    assert context.home_entity_id is None and context.school_entity_id is None
     assert (
-        context.primary_area_reference is None
-        and context.current_location_reference is None
+        context.primary_area_entity_id is None
+        and context.current_location_entity_id is None
     )
     assert context.current_role is None and context.life_stage == "student"
 
@@ -149,7 +166,7 @@ def test_life_updates_do_not_touch_state_or_memory(
     )
     memory = store.create_memory("semantic", "测试记忆", "explicit", "low")
     service.update_life_context(
-        key, current_location_reference="学校", current_role="学生"
+        key, current_location_entity_id=SCHOOL, current_role="学生"
     )
     assert store.get_character_state(key) == state
     assert store.list_active_memories() == (memory,)
@@ -164,11 +181,14 @@ def test_life_updates_do_not_touch_state_or_memory(
 def test_prompt_projects_known_life_fields_and_preserves_existing_rules(
     tmp_path: Path, seed: CharacterSeedData
 ) -> None:
-    _, _, service = make_service(tmp_path / "life.db", seed)
+    store, _, service = make_service(tmp_path / "life.db", seed)
     context = service.get_life_context(seed.identity.internal_id)
+    projected = service.project_context(
+        seed.identity.internal_id, initialize_world(store)
+    )
     builder = PromptBuilder(CharacterProjector().project(seed))
     baseline = builder.build([], "你好")[0]["content"]
-    system = builder.build([], "你好", character_life_context=context)[0]["content"]
+    system = builder.build([], "你好", character_life_context=projected)[0]["content"]
     assert system.startswith(baseline)
     block = system.split("【当前生活上下文】", 1)[1]
     assert "生活阶段：学生" in block and "当前身份：学生" in block
@@ -194,7 +214,12 @@ def test_unconfigured_context_does_not_emit_unknown_prompt_fields(
     context = service.get_life_context(seed.identity.internal_id)
     assert context.life_stage == "unknown"
     system = PromptBuilder(ProjectedCharacterContext("玲")).build(
-        [], "你好", character_life_context=context
+        [],
+        "你好",
+        character_life_context=service.project_context(
+            seed.identity.internal_id,
+            initialize_world(SQLiteStore(tmp_path / "life.db")),
+        ),
     )[0]["content"]
     assert "【当前生活上下文】" not in system
 
@@ -218,7 +243,7 @@ def test_conversation_reads_latest_life_context(
         character_life_service=service,
         clock=clock,
     )
-    service.update_life_context(key, current_location_reference="学校")
+    service.update_life_context(key, current_location_entity_id=SCHOOL)
     before = service.get_life_context(key)
     assert conversation.send("你在哪？") == "在呢。"
     assert service.get_life_context(key) == before
@@ -232,12 +257,12 @@ def test_invalid_update_is_atomic_and_rollback_preserves_context(
     before = service.get_life_context(key)
     with pytest.raises(ValidationError):
         service.update_life_context(
-            key, current_location_reference="学校", current_role="   "
+            key, current_location_entity_id=SCHOOL, current_role="   "
         )
     assert service.get_life_context(key) == before
     clock.set(T0 - timedelta(hours=1))
     with pytest.raises(ValueError, match="clock_moved_backwards"):
-        service.update_life_context(key, current_location_reference="学校")
+        service.update_life_context(key, current_location_entity_id=SCHOOL)
     assert service.get_life_context(key) == before
 
 
@@ -246,14 +271,36 @@ def test_cli_life_commands_update_clear_and_reject_unknown_commands(
 ) -> None:
     _, _, service = make_service(tmp_path / "life.db", seed)
     key = seed.identity.internal_id
-    _handle_life_command("/life", service, key)
-    _handle_life_command("/life location 学校", service, key)
-    assert service.get_life_context(key).current_location_reference == "学校"
-    _handle_life_command("/life role 学生", service, key)
+    _handle_life_command(
+        "/life", service, key, initialize_world(SQLiteStore(tmp_path / "life.db"))
+    )
+    _handle_life_command(
+        "/life location 学校",
+        service,
+        key,
+        initialize_world(SQLiteStore(tmp_path / "life.db")),
+    )
+    assert service.get_life_context(key).current_location_entity_id == SCHOOL
+    _handle_life_command(
+        "/life role 学生",
+        service,
+        key,
+        initialize_world(SQLiteStore(tmp_path / "life.db")),
+    )
     assert service.get_life_context(key).current_role == "学生"
-    _handle_life_command("/life location none", service, key)
-    assert service.get_life_context(key).current_location_reference is None
-    _handle_life_command("/life invalid value", service, key)
+    _handle_life_command(
+        "/life location none",
+        service,
+        key,
+        initialize_world(SQLiteStore(tmp_path / "life.db")),
+    )
+    assert service.get_life_context(key).current_location_entity_id is None
+    _handle_life_command(
+        "/life invalid value",
+        service,
+        key,
+        initialize_world(SQLiteStore(tmp_path / "life.db")),
+    )
     assert "生活命令无效" in capsys.readouterr().out
 
 

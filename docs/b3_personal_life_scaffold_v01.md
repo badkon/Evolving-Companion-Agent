@@ -1,5 +1,7 @@
 # B3 — Personal Life Scaffold v0.1
 
+> 本文记录 B3 阶段设计。B4 已将四个地点字符串升级为 World UUID `*_entity_id`，Prompt 名称通过 WorldEntityService 解析；旧字符串仅保留为迁移兼容数据。当前接口与迁移规则见 [B4 World State](b4_world_state_v01.md)，不再允许任意字符串作为地点 identity。
+
 ## 1. Personal Life Context Definition
 
 Personal Life Context 保存当前生活结构、阶段、生活身份和粗粒度地点引用，作为 Character 的长期生活上下文。角色基础人格/边界仍由 Character Data 管理；运行中的 Life Context 是独立的当前事实记录。
