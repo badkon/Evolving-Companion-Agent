@@ -20,7 +20,6 @@ from evolving_companion.character_state_transition import (
 )
 from evolving_companion.character_events import (
     ActivityEventPayload,
-    CharacterEvent,
     CharacterEventService,
     CharacterEventType,
     CharacterEventSource,
@@ -39,6 +38,8 @@ from evolving_companion.memory_recall import MemoryRecallService
 from evolving_companion.memory_reranker import MemoryReranker
 from evolving_companion.memory_retrieval import MemoryRetriever
 from evolving_companion.storage import SQLiteStore
+from evolving_companion.clock import SystemClock
+from evolving_companion.time_model import CharacterTimeService, format_offline_duration
 
 
 def main() -> None:
@@ -56,10 +57,14 @@ def main() -> None:
         seed_data = load_character_seed_data(seed_path)
         character_context = CharacterProjector().project(seed_data)
         store = SQLiteStore()
-        state_service = CharacterStateService(store)
-        transition_service = CharacterStateTransitionService(state_service)
+        clock = SystemClock()
+        state_service = CharacterStateService(store, clock)
+        transition_service = CharacterStateTransitionService(state_service, clock)
         event_service = CharacterEventService(
-            seed_data.identity.internal_id, state_service, transition_service
+            seed_data.identity.internal_id, state_service, transition_service, clock
+        )
+        time_service = CharacterTimeService(
+            store, seed_data.identity.internal_id, seed_data.timezone, clock
         )
         retriever = MemoryRetriever(store)
         recall_service = MemoryRecallService(retriever, MemoryReranker())
@@ -78,6 +83,8 @@ def main() -> None:
             memory_formation_service=formation_service,
             character_state_service=state_service,
             character_id=seed_data.identity.internal_id,
+            character_timezone=seed_data.timezone,
+            clock=clock,
         )
     except ValueError as error:
         print(error)
@@ -88,6 +95,7 @@ def main() -> None:
 
     print("和玲聊天。输入 /exit 退出。")
     print("开发状态命令：/state [energy|attention|mood|social|activity|event …]")
+    print("开发时间命令：/time")
     while True:
         try:
             user_message = input("你：").strip()
@@ -111,6 +119,20 @@ def main() -> None:
             _handle_event_command(
                 user_message, event_service, seed_data.identity.internal_id
             )
+            continue
+        if user_message == "/time":
+            snapshot = time_service.snapshot()
+            offline = (
+                "无记录"
+                if snapshot.offline_duration is None
+                else "暂不可判断"
+                if snapshot.diagnostics
+                else format_offline_duration(snapshot.offline_duration)
+            )
+            print(f"UTC: {snapshot.now_utc.isoformat()}")
+            print(f"Local: {snapshot.now_local.isoformat()} ({snapshot.timezone})")
+            print(f"Last interaction: {snapshot.last_interaction_at or '无记录'}")
+            print(f"Offline duration: {offline}")
             continue
 
         try:
@@ -254,7 +276,7 @@ def _handle_event_command(
     )
     try:
         result = event_service.handle(
-            CharacterEvent(
+            event_service.create_event(
                 character_id=character_id,
                 event_type=event_type,
                 source=source,

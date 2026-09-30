@@ -143,13 +143,13 @@ def test_event_validation_and_character_mismatch_do_not_mutate_state(
         CharacterEvent(
             character_id=key, event_type="activity_started", source="developer"
         )
-    with pytest.raises(ValidationError, match="future"):
-        CharacterEvent(
-            character_id=key,
-            event_type="rest_started",
-            source="developer",
-            occurred_at=datetime.now(timezone.utc) + timedelta(minutes=6),
-        )
+    future = CharacterEvent(
+        character_id=key,
+        event_type="rest_started",
+        source="developer",
+        occurred_at=datetime.now(timezone.utc) + timedelta(minutes=6),
+    )
+    assert events.handle(future).diagnostics == ("event_time_too_far_in_future",)
 
     unknown_id = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     invalid = events.handle(_event(unknown_id, "rest_started"))

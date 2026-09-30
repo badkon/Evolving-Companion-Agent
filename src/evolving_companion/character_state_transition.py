@@ -1,9 +1,10 @@
 """Small deterministic event and elapsed-time transitions for Character State."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 from uuid import UUID
+from evolving_companion.clock import Clock, SystemClock
 
 from evolving_companion.character_state import (
     Attention,
@@ -52,10 +53,6 @@ _EVENT_TYPES = frozenset(
 )
 
 
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 def _as_utc(value: datetime, name: str) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} must be a timezone-aware datetime")
@@ -67,15 +64,16 @@ class CharacterStateEvent:
     """Transient, explicit event; events are not written to an event log."""
 
     event_type: StateEventType
-    occurred_at: datetime = field(default_factory=_utc_now)
+    occurred_at: datetime | None = None
     activity_name: str | None = None
 
     def __post_init__(self) -> None:
         if self.event_type not in _EVENT_TYPES:
             raise ValueError(f"Unsupported State event: {self.event_type}")
-        object.__setattr__(
-            self, "occurred_at", _as_utc(self.occurred_at, "occurred_at")
-        )
+        if self.occurred_at is not None:
+            object.__setattr__(
+                self, "occurred_at", _as_utc(self.occurred_at, "occurred_at")
+            )
         if self.activity_name is not None and not self.activity_name.strip():
             raise ValueError("activity_name must not be empty")
 
@@ -101,16 +99,18 @@ class CharacterStateTransitionService:
         "current_activity",
     )
 
-    def __init__(self, state_service: CharacterStateService) -> None:
+    def __init__(
+        self, state_service: CharacterStateService, clock: Clock | None = None
+    ) -> None:
         self._state_service = state_service
+        self._clock = clock or SystemClock()
 
     def apply_event(
         self, character_id: UUID, event: CharacterStateEvent
     ) -> CharacterStateTransitionResult:
+        occurred_at = _as_utc(event.occurred_at or self._clock.now_utc(), "occurred_at")
         if event.event_type == "time_elapsed":
-            return self.apply_elapsed_time(character_id, event.occurred_at)
-
-        occurred_at = _as_utc(event.occurred_at, "occurred_at")
+            return self.apply_elapsed_time(character_id, occurred_at)
         before = self._state_service.get_state(character_id, initialize_at=occurred_at)
         if occurred_at < before.updated_at:
             return self._result(
@@ -174,9 +174,9 @@ class CharacterStateTransitionService:
         return self._result(before, after, event.event_type, reason)
 
     def apply_elapsed_time(
-        self, character_id: UUID, now: datetime
+        self, character_id: UUID, now: datetime | None = None
     ) -> CharacterStateTransitionResult:
-        now = _as_utc(now, "now")
+        now = _as_utc(now or self._clock.now_utc(), "now")
         before = self._state_service.get_state(character_id, initialize_at=now)
         elapsed = now - before.updated_at
         energy = before.energy

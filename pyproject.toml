@@ -15,6 +15,7 @@ dependencies = [
     "PyYAML>=6.0",
     "sentence-transformers>=3.0",
     "python-dotenv>=1.0",
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

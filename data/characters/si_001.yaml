@@ -1,4 +1,5 @@
 schema_version: "0.1"
+timezone: "Asia/Shanghai" # 开发期 Character 时区配置，不代表用户设备或所在地
 
 identity:
   internal_id: "dccb85ed-04ce-4d8f-a135-f60387eaad9e" # 稳定机器身份 UUID，不作为日常称呼

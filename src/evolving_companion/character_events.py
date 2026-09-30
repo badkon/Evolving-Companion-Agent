@@ -8,6 +8,7 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from evolving_companion.clock import Clock, SystemClock
 
 from evolving_companion.character_state import CharacterState, CharacterStateService
 from evolving_companion.character_state_transition import (
@@ -54,18 +55,18 @@ class CharacterEvent(BaseModel):
     event_id: UUID = Field(default_factory=uuid4)
     character_id: UUID
     event_type: CharacterEventType
-    occurred_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    occurred_at: datetime | None = None
     payload: ActivityEventPayload | None = None
     source: CharacterEventSource
 
     @field_validator("occurred_at")
     @classmethod
-    def validate_event_time(cls, value: datetime) -> datetime:
+    def validate_event_time(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("occurred_at must be timezone-aware")
         utc_value = value.astimezone(timezone.utc)
-        if utc_value > datetime.now(timezone.utc) + MAX_FUTURE_SKEW:
-            raise ValueError("occurred_at is anomalously far in the future")
         return utc_value
 
     @model_validator(mode="after")
@@ -107,12 +108,29 @@ class CharacterEventService:
         character_id: UUID,
         state_service: CharacterStateService,
         transition_service: CharacterStateTransitionService,
+        clock: Clock | None = None,
     ) -> None:
         self._character_id = character_id
         self._state_service = state_service
         self._transition_service = transition_service
+        self._clock = clock or SystemClock()
+
+    def create_event(self, **values: object) -> CharacterEvent:
+        values.setdefault("occurred_at", self._clock.now_utc())
+        return CharacterEvent.model_validate(values)
 
     def handle(self, event: CharacterEvent) -> EventHandlingResult:
+        occurred_at = event.occurred_at or self._clock.now_utc()
+        if occurred_at > self._clock.now_utc() + MAX_FUTURE_SKEW:
+            return self._result(
+                event,
+                None,
+                False,
+                "事件时间异常地位于未来。",
+                diagnostics=("event_time_too_far_in_future",),
+            )
+        if event.occurred_at is None:
+            event = event.model_copy(update={"occurred_at": occurred_at})
         if event.character_id != self._character_id:
             return self._result(
                 event,

@@ -3,9 +3,10 @@
 from pathlib import Path
 from typing import Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SeedModel(BaseModel):
@@ -62,12 +63,22 @@ class SeedCapabilities(SeedModel):
 
 class CharacterSeedData(SeedModel):
     schema_version: Literal["0.1"]
+    timezone: str
     identity: IdentityData
     personality: PersonalityData
     behavioral_boundaries: BehavioralBoundaries
     knowledge_boundaries: KnowledgeBoundaries
     seed_preferences: SeedPreferences
     seed_capabilities: SeedCapabilities
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as error:
+            raise ValueError(f"Unknown IANA timezone: {value}") from error
+        return value
 
 
 def load_character_seed_data(path: str | Path) -> CharacterSeedData:

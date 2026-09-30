@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 开发阶段：**A4.2 — Explicit Character Events v0.1 — Complete**。
+- 开发阶段：**B1 — Time Model v0.1 — Complete**。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
@@ -15,6 +15,8 @@ A3 建立了长期记忆 v1 的 archive/evidence 存储、按需 recall 与 Top-
 A4 v0.1 增加基于 `identity.internal_id` UUID 的单行当前 Character State 持久化、显式部分更新和独立 Prompt 状态区块。A4.1 增加确定性显式事件转变和 elapsed-time 规则；Conversation 在处理本轮前应用时间规则，不从对话语义推断 State。设计与限制见 [A4 Character State v0.1 / A4.1 State Transition](docs/a4_character_state_v01.md)。
 
 A4.2 增加内存中的显式 `CharacterEvent` 与 `CharacterEventService`，映射到现有 State Transition；事件本身不持久化，状态仍使用 `identity.internal_id` 写入原表。设计与限制见 [A4.2 Explicit Character Events](docs/a4_2_character_events_v01.md)。
+
+B1 增加注入式 UTC Clock、显式 Character 时区、时间快照、最后成功对话时间持久化、离线时长，以及 Prompt 时间投影；State、Event、Conversation 时间路径统一使用 Clock。当前 Seed 的 `Asia/Shanghai` 是开发期 Character 配置，不是用户位置推断。详见 [B1 Time Model](docs/b1_time_model_v01.md)。
 
 当前尚未实现 memory merge、summary、自主行为或世界模拟。
 
@@ -74,6 +76,7 @@ python -m evolving_companion.cli
 CLI 中 `/state` 及其参数是本地开发调试命令，不会调用 LLM。
 离线检查 A4.1 transition：`python scripts/run_character_state_transition_smoke.py`。可选 `--real-llm` 仅用于观察 Prompt 表达，不属于规则验证。
 离线检查 A4.2 显式事件：`python scripts/run_character_event_smoke.py`。
+离线检查 B1 时间模型：`python scripts/run_time_model_smoke.py`。
 
 ## 设计文档
 

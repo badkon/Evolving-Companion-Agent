@@ -8,6 +8,7 @@ from typing import Literal, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
+from evolving_companion.clock import Clock, SystemClock
 
 Energy = Literal["low", "medium", "high"]
 Attention = Literal["scattered", "normal", "focused"]
@@ -54,8 +55,9 @@ class CharacterStateStore(Protocol):
 class CharacterStateService:
     """Initialize state once and apply explicit partial updates."""
 
-    def __init__(self, store: CharacterStateStore) -> None:
+    def __init__(self, store: CharacterStateStore, clock: Clock | None = None) -> None:
         self._store = store
+        self._clock = clock or SystemClock()
 
     def get_state(
         self, character_id: UUID, *, initialize_at: datetime | None = None
@@ -64,7 +66,7 @@ class CharacterStateService:
         if state is None:
             state = CharacterState(
                 character_id=character_id,
-                updated_at=initialize_at or datetime.now(timezone.utc),
+                updated_at=initialize_at or self._clock.now_utc(),
             )
             self._store.upsert_character_state(state)
         return state
@@ -95,7 +97,7 @@ class CharacterStateService:
                 values[name] = value
         if current_activity is not UNCHANGED:
             values["current_activity"] = current_activity
-        values["updated_at"] = datetime.now(timezone.utc)
+        values["updated_at"] = self._clock.now_utc()
         updated = CharacterState.model_validate(values)
         self._store.upsert_character_state(updated)
         return updated

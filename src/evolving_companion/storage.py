@@ -74,6 +74,12 @@ CREATE TABLE IF NOT EXISTS character_state (
     current_activity TEXT,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS character_runtime (
+    character_id TEXT PRIMARY KEY,
+    last_interaction_at TEXT,
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -146,6 +152,34 @@ class SQLiteStore:
         connection.execute("PRAGMA foreign_keys = ON")
         connection.row_factory = sqlite3.Row
         return connection
+
+    def get_last_interaction_at(self, character_id: UUID) -> datetime | None:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT last_interaction_at FROM character_runtime WHERE character_id = ?",
+                (str(character_id),),
+            ).fetchone()
+        return datetime.fromisoformat(row[0]) if row and row[0] else None
+
+    def record_last_interaction(self, character_id: UUID, at: datetime) -> datetime:
+        if at.tzinfo is None or at.utcoffset() is None:
+            raise ValueError("interaction time must be timezone-aware")
+        at = at.astimezone(timezone.utc)
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                "SELECT last_interaction_at FROM character_runtime WHERE character_id = ?",
+                (str(character_id),),
+            ).fetchone()
+            existing = datetime.fromisoformat(row[0]) if row and row[0] else None
+            persisted = existing if existing is not None and existing > at else at
+            connection.execute(
+                """INSERT INTO character_runtime(character_id, last_interaction_at, updated_at)
+                   VALUES (?, ?, ?) ON CONFLICT(character_id) DO UPDATE SET
+                   last_interaction_at=excluded.last_interaction_at,
+                   updated_at=excluded.updated_at""",
+                (str(character_id), persisted.isoformat(), _utc_now()),
+            )
+        return persisted
 
     def get_character_state(self, character_id: UUID) -> CharacterState | None:
         """Load one state using the Character's stable internal UUID."""

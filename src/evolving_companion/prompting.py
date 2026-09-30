@@ -5,6 +5,7 @@ from typing import Protocol
 
 from evolving_companion.character_projection import ProjectedCharacterContext
 from evolving_companion.character_state import CharacterState
+from evolving_companion.time_model import CharacterTimeSnapshot, format_offline_duration
 
 Message = dict[str, str]
 
@@ -27,16 +28,20 @@ class PromptBuilder:
         user_message: str,
         recalled_memories: Sequence[MemoryPromptCandidate] = (),
         character_state: CharacterState | None = None,
+        character_time: CharacterTimeSnapshot | None = None,
     ) -> list[Message]:
         system_instructions = self._build_system_instructions()
         character_context = self._build_character_context()
         state_context = self._build_state_context(character_state)
         memory_context = self._build_memory_context(recalled_memories)
+        time_context = self._build_time_context(character_time)
         system_content = f"{system_instructions}\n\n{character_context}"
         if state_context:
             system_content = f"{system_content}\n\n{state_context}"
         if memory_context:
             system_content = f"{system_content}\n\n{memory_context}"
+        if time_context:
+            system_content = f"{system_content}\n\n{time_context}"
         messages: list[Message] = [
             {
                 "role": "system",
@@ -71,6 +76,26 @@ class PromptBuilder:
                 f"精力：{labels[state.energy]}；注意力：{labels[state.attention]}；心境倾向：{labels[state.mood_tendency]}；社交投入：{labels[state.social_engagement]}。",
                 f"当前活动：{activity}。",
                 "这些只是当前状态线索，可轻微影响表达方式；不代表人格、身份或长期记忆。",
+            )
+        )
+
+    @staticmethod
+    def _build_time_context(snapshot: CharacterTimeSnapshot | None) -> str:
+        if snapshot is None:
+            return ""
+        if snapshot.diagnostics:
+            offline = "暂不可判断"
+        elif snapshot.offline_duration is None:
+            offline = "无记录"
+        else:
+            offline = format_offline_duration(snapshot.offline_duration)
+        return "\n".join(
+            (
+                "【当前时间】",
+                f"当地日期：{snapshot.local_date.isoformat()}",
+                f"当地时间：{snapshot.local_time.strftime('%H:%M')}",
+                f"距离上次交流：{offline}",
+                "时间与离线时长不代表这段时间发生过任何具体经历或活动。",
             )
         )
 

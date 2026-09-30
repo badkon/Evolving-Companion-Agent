@@ -18,6 +18,7 @@ def test_si_001_seed_yaml_loads_as_validated_character_data() -> None:
 
     assert isinstance(seed, CharacterSeedData)
     assert seed.schema_version == "0.1"
+    assert seed.timezone == "Asia/Shanghai"
     assert seed.identity.internal_id == UUID("dccb85ed-04ce-4d8f-a135-f60387eaad9e")
     assert isinstance(seed.identity.internal_id, UUID)
     assert seed.identity.development_id == "SI-001"

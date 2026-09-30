@@ -1,7 +1,6 @@
 """Coordinate one conversation turn while keeping history in memory."""
 
 from collections.abc import Mapping
-from datetime import datetime, timezone
 from typing import Protocol
 from uuid import UUID, uuid4
 
@@ -21,6 +20,8 @@ from evolving_companion.prompting import (
     PromptBuilder,
 )
 from evolving_companion.storage import SQLiteStore
+from evolving_companion.clock import Clock, SystemClock
+from evolving_companion.time_model import CharacterTimeService
 
 
 class TextCompletionClient(Protocol):
@@ -42,25 +43,43 @@ class Conversation:
         *,
         character_state_service: CharacterStateService | None = None,
         character_id: UUID | None = None,
+        character_timezone: str | None = None,
+        clock: Clock | None = None,
     ) -> None:
-        if (character_state_service is None) != (character_id is None):
+        if character_state_service is not None and character_id is None:
             raise ValueError(
                 "character_state_service and internal character_id are required together"
+            )
+        if (
+            character_id is not None
+            and character_state_service is None
+            and character_timezone is None
+        ):
+            raise ValueError(
+                "character_id requires State or Character Time configuration"
             )
         if character_id is not None and not isinstance(character_id, UUID):
             raise TypeError("character_id must be identity.internal_id (UUID)")
         self._llm_client = llm_client
+        self._clock = clock or SystemClock()
         self._prompt_builder = PromptBuilder(character_context)
         self._archive_store = archive_store
         self._memory_recall_service = memory_recall_service
         self._memory_formation_service = memory_formation_service
         self._character_state_service = character_state_service
         self._state_transition_service = (
-            CharacterStateTransitionService(character_state_service)
+            CharacterStateTransitionService(character_state_service, self._clock)
             if character_state_service is not None
             else None
         )
         self._character_id = character_id
+        self._time_service = (
+            CharacterTimeService(
+                archive_store, character_id, character_timezone, self._clock
+            )
+            if character_id is not None and character_timezone is not None
+            else None
+        )
         self._last_memory_formation_result: MemoryFormationResult | None = None
         self.conversation_id = str(uuid4())
         self._history: list[Message] = []
@@ -80,11 +99,17 @@ class Conversation:
             self.conversation_id, "user", user_message
         )
         character_state = None
+        now_utc = self._clock.now_utc()
+        time_snapshot = (
+            self._time_service.snapshot(now_utc)
+            if self._time_service is not None
+            else None
+        )
         if self._state_transition_service is not None:
             # character_id is validated as the stable identity.internal_id UUID.
             assert self._character_id is not None
             character_state = self._state_transition_service.apply_elapsed_time(
-                self._character_id, datetime.now(timezone.utc)
+                self._character_id, now_utc
             ).after_state
         recalled_memories: tuple[MemoryPromptCandidate, ...] = ()
         if self._memory_recall_service is not None:
@@ -93,12 +118,18 @@ class Conversation:
             )
             recalled_memories = recall_result.recalled_memories
         messages = self._prompt_builder.build(
-            self._history, user_message, recalled_memories, character_state
+            self._history,
+            user_message,
+            recalled_memories,
+            character_state,
+            time_snapshot,
         )
         reply = self._llm_client.complete(messages)
         assistant_archive_id = self._archive_store.append_archive_message(
             self.conversation_id, "assistant", reply
         )
+        if self._time_service is not None:
+            self._time_service.record_successful_interaction(self._clock.now_utc())
         self._history.extend(
             (
                 {"role": "user", "content": user_message},
