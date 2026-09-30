@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 开发阶段：**B1 — Time Model v0.1 — Complete**。
+- 开发阶段：**B3 — Personal Life Scaffold v0.1 — Complete**。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
@@ -18,7 +18,11 @@ A4.2 增加内存中的显式 `CharacterEvent` 与 `CharacterEventService`，映
 
 B1 增加注入式 UTC Clock、显式 Character 时区、时间快照、最后成功对话时间持久化、离线时长，以及 Prompt 时间投影；State、Event、Conversation 时间路径统一使用 Clock。当前 Seed 的 `Asia/Shanghai` 是开发期 Character 配置，不是用户位置推断。详见 [B1 Time Model](docs/b1_time_model_v01.md)。
 
+B2 按四个独立字段时间锚点将短期 State 归一到工程中性 baseline；无变化检查不刷新时间，elapsed 不清除活动，也不表示离线期间发生过任何经历。旧 State 表自动回填锚点。详见 [B2 Temporal State Reconciliation](docs/b2_temporal_state_reconciliation_v01.md)。
+
 当前尚未实现 memory merge、summary、自主行为或世界模拟。
+
+B3 增加独立持久化的 Personal Life Context，按 Internal UUID 绑定。已有生活设定仅用于首次初始化，当前位置未定义时保持空值；位置和身份只允许显式更新，不由时间或 LLM 自动推断，也不自动形成 Memory。详见 [B3 Personal Life Scaffold](docs/b3_personal_life_scaffold_v01.md)。
 
 ## 开发环境
 
@@ -77,6 +81,9 @@ CLI 中 `/state` 及其参数是本地开发调试命令，不会调用 LLM。
 离线检查 A4.1 transition：`python scripts/run_character_state_transition_smoke.py`。可选 `--real-llm` 仅用于观察 Prompt 表达，不属于规则验证。
 离线检查 A4.2 显式事件：`python scripts/run_character_event_smoke.py`。
 离线检查 B1 时间模型：`python scripts/run_time_model_smoke.py`。
+离线检查 B2 状态归一：`python scripts/run_temporal_state_reconciliation_smoke.py`。
+CLI 中 `/life` 显示生活上下文；`/life location 学校`、`/life role 学生` 显式更新，值为 `none` 时清空对应字段。这些命令不会调用 LLM。
+离线检查 B3 生活支架：`python scripts/run_personal_life_smoke.py`。
 
 ## 设计文档
 

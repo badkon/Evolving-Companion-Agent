@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from evolving_companion.character_state import CharacterState
+from evolving_companion.character_state import CharacterState, TEMPORAL_ANCHORS
+from evolving_companion.character_life import CharacterLifeContext
 
 MEMORY_TYPES = frozenset({"episodic", "semantic", "self", "relationship"})
 MEMORY_SOURCES = frozenset({"explicit", "observed", "inferred"})
@@ -72,12 +73,27 @@ CREATE TABLE IF NOT EXISTS character_state (
         social_engagement IN ('withdrawn', 'normal', 'engaged')
     ),
     current_activity TEXT,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    energy_updated_at TEXT NOT NULL,
+    attention_updated_at TEXT NOT NULL,
+    mood_updated_at TEXT NOT NULL,
+    social_updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS character_runtime (
     character_id TEXT PRIMARY KEY,
     last_interaction_at TEXT,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS character_life_context (
+    character_id TEXT PRIMARY KEY,
+    life_stage TEXT NOT NULL CHECK (life_stage IN ('student', 'worker', 'unemployed', 'unknown')),
+    home_reference TEXT,
+    school_reference TEXT,
+    primary_area_reference TEXT,
+    current_location_reference TEXT,
+    current_role TEXT,
     updated_at TEXT NOT NULL
 );
 """
@@ -146,6 +162,22 @@ class SQLiteStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection:
             connection.executescript(SCHEMA)
+            # A4/B1 compatibility: retain the existing row and backfill each
+            # new field anchor from its last known global State timestamp.
+            with connection:
+                connection.execute("BEGIN IMMEDIATE")
+                columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(character_state)")
+                }
+                for anchor in TEMPORAL_ANCHORS.values():
+                    if anchor not in columns:
+                        connection.execute(
+                            f"ALTER TABLE character_state ADD COLUMN {anchor} TEXT"
+                        )
+                    connection.execute(
+                        f"UPDATE character_state SET {anchor} = updated_at WHERE {anchor} IS NULL"
+                    )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path)
@@ -160,6 +192,45 @@ class SQLiteStore:
                 (str(character_id),),
             ).fetchone()
         return datetime.fromisoformat(row[0]) if row and row[0] else None
+
+    def get_character_life_context(
+        self, character_id: UUID
+    ) -> CharacterLifeContext | None:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM character_life_context WHERE character_id = ?",
+                (str(character_id),),
+            ).fetchone()
+        return (
+            CharacterLifeContext.model_validate(dict(row)) if row is not None else None
+        )
+
+    def upsert_character_life_context(self, context: CharacterLifeContext) -> None:
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """INSERT INTO character_life_context
+                   (character_id, life_stage, home_reference, school_reference,
+                    primary_area_reference, current_location_reference, current_role, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(character_id) DO UPDATE SET
+                       life_stage = excluded.life_stage,
+                       home_reference = excluded.home_reference,
+                       school_reference = excluded.school_reference,
+                       primary_area_reference = excluded.primary_area_reference,
+                       current_location_reference = excluded.current_location_reference,
+                       current_role = excluded.current_role,
+                       updated_at = excluded.updated_at""",
+                (
+                    str(context.character_id),
+                    context.life_stage,
+                    context.home_reference,
+                    context.school_reference,
+                    context.primary_area_reference,
+                    context.current_location_reference,
+                    context.current_role,
+                    context.updated_at.astimezone(timezone.utc).isoformat(),
+                ),
+            )
 
     def record_last_interaction(self, character_id: UUID, at: datetime) -> datetime:
         if at.tzinfo is None or at.utcoffset() is None:
@@ -200,15 +271,20 @@ class SQLiteStore:
             connection.execute(
                 """INSERT INTO character_state
                    (character_id, energy, attention, mood_tendency,
-                    social_engagement, current_activity, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                    social_engagement, current_activity, updated_at,
+                    energy_updated_at, attention_updated_at, mood_updated_at, social_updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(character_id) DO UPDATE SET
                        energy = excluded.energy,
                        attention = excluded.attention,
                        mood_tendency = excluded.mood_tendency,
                        social_engagement = excluded.social_engagement,
                        current_activity = excluded.current_activity,
-                       updated_at = excluded.updated_at""",
+                       updated_at = excluded.updated_at,
+                       energy_updated_at = excluded.energy_updated_at,
+                       attention_updated_at = excluded.attention_updated_at,
+                       mood_updated_at = excluded.mood_updated_at,
+                       social_updated_at = excluded.social_updated_at""",
                 (
                     str(state.character_id),
                     state.energy,
@@ -217,6 +293,10 @@ class SQLiteStore:
                     state.social_engagement,
                     state.current_activity,
                     state.updated_at.astimezone(timezone.utc).isoformat(),
+                    state.energy_updated_at.isoformat(),
+                    state.attention_updated_at.isoformat(),
+                    state.mood_updated_at.isoformat(),
+                    state.social_updated_at.isoformat(),
                 ),
             )
 

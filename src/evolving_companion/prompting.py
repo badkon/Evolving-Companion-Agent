@@ -5,6 +5,7 @@ from typing import Protocol
 
 from evolving_companion.character_projection import ProjectedCharacterContext
 from evolving_companion.character_state import CharacterState
+from evolving_companion.character_life import CharacterLifeContext
 from evolving_companion.time_model import CharacterTimeSnapshot, format_offline_duration
 
 Message = dict[str, str]
@@ -29,12 +30,14 @@ class PromptBuilder:
         recalled_memories: Sequence[MemoryPromptCandidate] = (),
         character_state: CharacterState | None = None,
         character_time: CharacterTimeSnapshot | None = None,
+        character_life_context: CharacterLifeContext | None = None,
     ) -> list[Message]:
         system_instructions = self._build_system_instructions()
         character_context = self._build_character_context()
         state_context = self._build_state_context(character_state)
         memory_context = self._build_memory_context(recalled_memories)
         time_context = self._build_time_context(character_time)
+        life_context = self._build_life_context(character_life_context)
         system_content = f"{system_instructions}\n\n{character_context}"
         if state_context:
             system_content = f"{system_content}\n\n{state_context}"
@@ -42,6 +45,8 @@ class PromptBuilder:
             system_content = f"{system_content}\n\n{memory_context}"
         if time_context:
             system_content = f"{system_content}\n\n{time_context}"
+        if life_context:
+            system_content = f"{system_content}\n\n{life_context}"
         messages: list[Message] = [
             {
                 "role": "system",
@@ -53,6 +58,34 @@ class PromptBuilder:
         )
         messages.append({"role": "user", "content": user_message})
         return messages
+
+    @staticmethod
+    def _build_life_context(context: CharacterLifeContext | None) -> str:
+        if context is None:
+            return ""
+        lines: list[str] = []
+        stages = {"student": "学生", "worker": "工作阶段", "unemployed": "未就业"}
+        if context.life_stage != "unknown":
+            lines.append(f"生活阶段：{stages[context.life_stage]}")
+        for label, value in (
+            ("当前身份", context.current_role),
+            ("家", context.home_reference),
+            ("学校", context.school_reference),
+            ("主要生活区域", context.primary_area_reference),
+            ("当前地点", context.current_location_reference),
+        ):
+            if value is not None:
+                lines.append(f"{label}：{value}")
+        if not lines:
+            return ""
+        return "\n".join(
+            (
+                "【当前生活上下文】",
+                *lines,
+                "这些生活关联不自动成为亲历记忆，也不说明外部世界当前状态；地点不等于活动。",
+                "不要据此编造课程、天气、人物、行程或过去经历；未记录当前位置时，不推断此刻在家或学校，时间也不能决定位置。",
+            )
+        )
 
     @staticmethod
     def _build_state_context(state: CharacterState | None) -> str:

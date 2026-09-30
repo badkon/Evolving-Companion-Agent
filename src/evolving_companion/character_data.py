@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from evolving_companion.character_life import LifeContextData
+
 
 class SeedModel(BaseModel):
     """Shared strict and immutable settings for seed data models."""
@@ -70,6 +72,8 @@ class CharacterSeedData(SeedModel):
     knowledge_boundaries: KnowledgeBoundaries
     seed_preferences: SeedPreferences
     seed_capabilities: SeedCapabilities
+    # 仅首次初始化 Life Context；不能覆盖已持久化的生活上下文。
+    initial_life_context: LifeContextData = Field(default_factory=LifeContextData)
 
     @field_validator("timezone")
     @classmethod

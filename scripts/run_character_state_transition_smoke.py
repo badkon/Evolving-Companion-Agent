@@ -8,7 +8,11 @@ from uuid import UUID
 
 from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.character_projection import CharacterProjector
-from evolving_companion.character_state import CharacterStateService
+from evolving_companion.character_state import (
+    CharacterState,
+    CharacterStateService,
+    TEMPORAL_ANCHORS,
+)
 from evolving_companion.character_state_transition import (
     CharacterStateEvent,
     CharacterStateTransitionService,
@@ -41,8 +45,9 @@ def main() -> None:
         transitions = CharacterStateTransitionService(states)
         initial = states.get_state(character_id)
         states.save_state(
-            initial.model_copy(
-                update={
+            CharacterState.model_validate(
+                initial.model_dump(exclude=set(TEMPORAL_ANCHORS.values()))
+                | {
                     "energy": "low",
                     "attention": "focused",
                     "mood_tendency": "neutral",
@@ -80,7 +85,7 @@ def main() -> None:
 
         twelve_hours_later = base_time + timedelta(hours=12)
         later = transitions.apply_elapsed_time(character_id, twelve_hours_later)
-        assert later.after_state.energy == "high"
+        assert later.after_state.energy == "medium"
         persisted = CharacterStateService(SQLiteStore(database_path)).get_state(
             character_id
         )

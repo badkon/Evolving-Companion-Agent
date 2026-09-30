@@ -6,7 +6,7 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — B1 Time Model v0.1 Complete
+## 当前工程状态 — B3 Personal Life Scaffold v0.1 Complete
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
@@ -46,10 +46,16 @@ PromptBuilder → LLM
 Clock → Character Time Model
 ├─ Time Snapshot
 ├─ Offline Duration
-├─ State elapsed transition
+├─ Passive State reconciliation (field-level anchors)
 └─ Prompt Time Projection
 
 Character State 按 `identity.internal_id` UUID 绑定；它与 `development_id`、Personality、Memory 和 World State 分离。
+
+B3 的独立路径：Character Life Context → Prompt Context → PromptBuilder。CharacterLifeService 显式读取和部分更新当前生活上下文，使用相同的 `identity.internal_id` UUID。Seed 的 `initial_life_context` 只初始化缺失记录，不能覆盖已持久化值。时间推进不改变 Life Context；Location ≠ Activity，Life Context ≠ Memory ≠ World State。详见 [B3 Personal Life Scaffold](b3_personal_life_scaffold_v01.md)。
+
+当前 Character Event → State；Character Event → Life Context 是未来扩展。本阶段不扩大专用于 State 的 Event payload/result，仅提供 LifeService 显式更新接口。
+
+B2 复用 `apply_elapsed_time()`，依据 State 中四个独立 UTC 字段锚点进行 baseline reconciliation。`updated_at` 表示整行最后实际变化时间；无变化检查不刷新任何锚点，其他字段变化不重置未变字段的累计时间。SQLite 兼容初始化为旧行增加并回填四个锚点列。Offline Duration 使用 last interaction，State elapsed 使用各字段锚点，二者独立。活动保留，不生成离线经历。详见 [B2 Temporal State Reconciliation](b2_temporal_state_reconciliation_v01.md)。
 
 其中：
 
@@ -103,6 +109,8 @@ Runtime Data 不进入 Git。
 ## 5. 存储
 
 当前使用 SQLite 保存对话原始记录、显式创建的 Memory，以及 A4 的单行当前 Character State。A4.1/A4.2 不新增 transition 或 event history 表；完整 Character Store 尚未实现。
+
+B3 增加 `character_life_context`，每个 Internal UUID 一行当前生活上下文，不新增 history 表。读取和显式更新不创建 Memory，也不修改 Character State；普通 Prompt 不包含 UUID、时间戳或数据库字段名。
 
 上层模块不应直接依赖具体数据库实现，应通过统一的数据访问边界访问 Character State。
 

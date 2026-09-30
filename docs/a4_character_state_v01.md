@@ -16,6 +16,11 @@ in `character_state`; an absent row is initialized once with defaults. Explicit
 partial updates preserve omitted values. Passing `current_activity=None` clears
 the activity, while omitting it leaves it unchanged.
 
+B2 adds persisted UTC `energy_updated_at`, `attention_updated_at`,
+`mood_updated_at`, and `social_updated_at` anchors for independent passive
+reconciliation. Existing rows initialize them from the original `updated_at`.
+These timestamps are omitted from ordinary Prompt projection.
+
 The state service is the explicit write boundary. Conversation loads the state
 after archiving the user message and includes a compact, separate state section
 in the prompt. It does not write State based on user or model text. State is not
@@ -57,16 +62,16 @@ changed fields, event type, an explanation, and any diagnostics.
 ### Transition rules
 
 - **Energy:** `rest_started` moves up one level. Starting focus or completing a
-  conversation turn does not spend energy. For elapsed time, at 3–8 hours only
-  `low` becomes `medium`; at 8 hours or more energy moves up one level (`high`
-  stays `high`). Less than 3 hours leaves energy unchanged.
+  conversation turn does not spend energy. B2 replaces the original A4.1
+  elapsed rule: `low` becomes `medium` after 3h; `high` becomes `medium` after
+  8h; `medium` stays `medium`. Passive elapsed never produces `high`.
 - **Attention:** focus start sets `focused`; focus end sets `normal`. After at
-  least one elapsed hour, `focused` returns to `normal`. It is never changed to
+  least one elapsed hour, `focused` or `scattered` returns to `normal`. It is never changed to
   `scattered` by these rules.
-- **Mood:** ordinary events and elapsed time do not change mood. Explicit mood
-  events move one level up/down or reset to `neutral`.
+- **Mood:** explicit events move one level up/down or reset to `neutral`.
+  B2 returns `positive` / `low` to `neutral` after 6h.
 - **Social engagement:** explicit up/down events move at most one level and
-  stop at the endpoints.
+  stop at the endpoints. B2 returns `engaged` / `withdrawn` to `normal` after 6h.
 - **Activity:** set/clear events update it explicitly. A focused task may set
   it when an activity name is provided; ending the task does not clear it.
 
@@ -74,6 +79,9 @@ All event times must be timezone-aware and are normalized to UTC. When `now` is
 earlier than `updated_at`, no State field or timestamp is changed and the result
 includes the `clock_moved_backwards` diagnostic. Later elapsed calculations
 continue from the preserved timestamp anchor.
+Under B2, each passive field uses its own anchor; no-change checks do not write
+State or refresh `updated_at`. Actual changes update only the affected anchors
+and the global last-change timestamp. See [B2 reconciliation](b2_temporal_state_reconciliation_v01.md).
 The rules are engineering heuristics, not a physiological or psychological
 model. There is no inference, event history, offline life simulation, world
 event driver, activity scheduler, relationship coupling, personality evolution,

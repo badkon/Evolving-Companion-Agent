@@ -6,7 +6,12 @@ import pytest
 
 from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.character_projection import ProjectedCharacterContext
-from evolving_companion.character_state import CharacterStateService, Energy
+from evolving_companion.character_state import (
+    CharacterState,
+    CharacterStateService,
+    Energy,
+    TEMPORAL_ANCHORS,
+)
 from evolving_companion.character_state_transition import (
     CharacterStateEvent,
     CharacterStateTransitionService,
@@ -32,12 +37,18 @@ def _at(hours_ago: int = 0) -> datetime:
     return datetime.now(timezone.utc) - timedelta(hours=hours_ago)
 
 
+def _snapshot(state: CharacterState, **updates: object) -> CharacterState:
+    values = state.model_dump(exclude=set(TEMPORAL_ANCHORS.values()))
+    values.update(updates)
+    return CharacterState.model_validate(values)
+
+
 @pytest.mark.parametrize(
     ("energy", "hours", "expected"),
     [
         ("low", 8, "medium"),
-        ("medium", 8, "high"),
-        ("high", 8, "high"),
+        ("medium", 8, "medium"),
+        ("high", 8, "medium"),
         ("low", 3, "medium"),
         ("medium", 3, "medium"),
         ("low", 2, "low"),
@@ -49,9 +60,7 @@ def test_elapsed_energy_rules(
     state_service, transitions = _services(tmp_path / "state.db")
     key = _character_id()
     before = state_service.get_state(key)
-    state_service.save_state(
-        before.model_copy(update={"energy": energy, "updated_at": _at(hours)})
-    )
+    state_service.save_state(_snapshot(before, energy=energy, updated_at=_at(hours)))
 
     result = transitions.apply_elapsed_time(key, _at())
 
@@ -86,23 +95,20 @@ def test_attention_timeout_and_negative_elapsed_diagnostics(tmp_path: Path) -> N
     state_service, transitions = _services(tmp_path / "state.db")
     key = _character_id()
     before = state_service.get_state(key)
-    state_service.save_state(
-        before.model_copy(update={"attention": "focused", "updated_at": _at(2)})
-    )
+    state_service.save_state(_snapshot(before, attention="focused", updated_at=_at(2)))
     timed_out = transitions.apply_elapsed_time(key, _at())
     assert timed_out.after_state.attention == "normal"
 
     t1 = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
     t0 = t1 - timedelta(hours=3)
-    original = timed_out.after_state.model_copy(
-        update={
-            "energy": "low",
-            "attention": "focused",
-            "mood_tendency": "positive",
-            "social_engagement": "engaged",
-            "current_activity": "阅读",
-            "updated_at": t1,
-        }
+    original = _snapshot(
+        timed_out.after_state,
+        energy="low",
+        attention="focused",
+        mood_tendency="positive",
+        social_engagement="engaged",
+        current_activity="阅读",
+        updated_at=t1,
     )
     state_service.save_state(original)
 
@@ -116,7 +122,8 @@ def test_attention_timeout_and_negative_elapsed_diagnostics(tmp_path: Path) -> N
     resumed = transitions.apply_elapsed_time(key, t2)
     assert resumed.after_state.energy == "low"
     assert resumed.after_state.attention == "focused"
-    assert resumed.after_state.updated_at == t2
+    assert resumed.after_state.updated_at == t1
+    assert resumed.after_state == original
 
 
 def test_conversation_continues_when_system_clock_is_behind(tmp_path: Path) -> None:
@@ -126,9 +133,7 @@ def test_conversation_continues_when_system_clock_is_behind(tmp_path: Path) -> N
     key = _character_id()
     initial = state_service.get_state(key)
     future = datetime.now(timezone.utc) + timedelta(hours=1)
-    state_service.save_state(
-        initial.model_copy(update={"energy": "low", "updated_at": future})
-    )
+    state_service.save_state(_snapshot(initial, energy="low", updated_at=future))
 
     class ReplyClient(TextCompletionClient):
         def complete(self, messages: list[Message]) -> str:
@@ -148,7 +153,7 @@ def test_conversation_continues_when_system_clock_is_behind(tmp_path: Path) -> N
     assert after.updated_at == future
 
 
-def test_mood_social_and_activity_require_explicit_events(tmp_path: Path) -> None:
+def test_explicit_mood_social_and_activity_events(tmp_path: Path) -> None:
     state_service, transitions = _services(tmp_path / "state.db")
     key = _character_id()
     initial = state_service.get_state(key)
@@ -192,9 +197,7 @@ def test_conversation_applies_elapsed_before_prompt_without_semantic_inference(
     state_service = CharacterStateService(store)
     key = _character_id()
     initial = state_service.get_state(key)
-    state_service.save_state(
-        initial.model_copy(update={"energy": "low", "updated_at": _at(9)})
-    )
+    state_service.save_state(_snapshot(initial, energy="low", updated_at=_at(9)))
 
     class InspectingClient(TextCompletionClient):
         def complete(self, messages: list[Message]) -> str:

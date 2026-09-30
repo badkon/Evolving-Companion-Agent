@@ -7,12 +7,12 @@ from uuid import UUID
 from evolving_companion.clock import Clock, SystemClock
 
 from evolving_companion.character_state import (
-    Attention,
     CharacterState,
     CharacterStateService,
     Energy,
     MoodTendency,
     SocialEngagement,
+    TEMPORAL_ANCHORS,
 )
 
 StateEventType = Literal[
@@ -169,6 +169,9 @@ class CharacterStateTransitionService:
         ):
             return self._result(before, before, event.event_type, reason)
         values["updated_at"] = occurred_at
+        for name, anchor in TEMPORAL_ANCHORS.items():
+            if values[name] != getattr(before, name):
+                values[anchor] = occurred_at
         after = CharacterState.model_validate(values)
         self._state_service.save_state(after)
         return self._result(before, after, event.event_type, reason)
@@ -178,10 +181,7 @@ class CharacterStateTransitionService:
     ) -> CharacterStateTransitionResult:
         now = _as_utc(now or self._clock.now_utc(), "now")
         before = self._state_service.get_state(character_id, initialize_at=now)
-        elapsed = now - before.updated_at
-        energy = before.energy
-        attention = before.attention
-        if elapsed < timedelta(0):
+        if now < before.updated_at:
             return self._result(
                 before,
                 before,
@@ -189,19 +189,42 @@ class CharacterStateTransitionService:
                 "当前时间早于状态更新时间；State 字段和时间锚点均保持不变。",
                 ("clock_moved_backwards",),
             )
-        if elapsed >= timedelta(hours=8):
-            energy = self._step_energy_up(energy)
-        elif elapsed >= timedelta(hours=3) and energy == "low":
-            energy = "medium"
-        if elapsed >= timedelta(hours=1) and attention == "focused":
-            attention = "normal"
-        reason = self._elapsed_reason(elapsed, energy, attention, before)
-
         values = before.model_dump()
-        values.update(energy=energy, attention=attention, updated_at=now)
+        energy_elapsed = now - before.energy_updated_at
+        if (before.energy == "low" and energy_elapsed >= timedelta(hours=3)) or (
+            before.energy == "high" and energy_elapsed >= timedelta(hours=8)
+        ):
+            values["energy"] = "medium"
+        if now - before.attention_updated_at >= timedelta(hours=1):
+            values["attention"] = "normal"
+        if now - before.mood_updated_at >= timedelta(hours=6):
+            values["mood_tendency"] = "neutral"
+        if now - before.social_updated_at >= timedelta(hours=6):
+            values["social_engagement"] = "normal"
+
+        changed = tuple(
+            name for name in self._STATE_FIELDS if values[name] != getattr(before, name)
+        )
+        if not changed:
+            return self._result(
+                before,
+                before,
+                "time_elapsed",
+                "时间检查未产生 State 变化；保留全部时间锚点。",
+            )
+        for name in changed:
+            values[TEMPORAL_ANCHORS[name]] = now
+        values["updated_at"] = now
         after = CharacterState.model_validate(values)
         self._state_service.save_state(after)
-        return self._result(before, after, "time_elapsed", reason)
+        return self._result(
+            before,
+            after,
+            "time_elapsed",
+            "按字段独立 elapsed 将短期状态归一到工程 baseline："
+            + "、".join(changed)
+            + "。",
+        )
 
     @staticmethod
     def _step_energy_up(energy: Energy) -> Energy:
@@ -270,14 +293,3 @@ class CharacterStateTransitionService:
             reason,
             diagnostics,
         )
-
-    @staticmethod
-    def _elapsed_reason(
-        elapsed: timedelta,
-        energy: Energy,
-        attention: Attention,
-        before: CharacterState,
-    ) -> str:
-        if energy != before.energy or attention != before.attention:
-            return f"按 elapsed={elapsed} 应用精力恢复与专注时限规则。"
-        return f"elapsed={elapsed} 未达到会改变 State 字段的阈值。"

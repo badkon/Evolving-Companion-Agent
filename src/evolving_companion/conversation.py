@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from evolving_companion.character_projection import ProjectedCharacterContext
 from evolving_companion.character_state import CharacterStateService
+from evolving_companion.character_life import CharacterLifeService
 from evolving_companion.character_state_transition import (
     CharacterStateTransitionService,
 )
@@ -45,15 +46,19 @@ class Conversation:
         character_id: UUID | None = None,
         character_timezone: str | None = None,
         clock: Clock | None = None,
+        character_life_service: CharacterLifeService | None = None,
     ) -> None:
         if character_state_service is not None and character_id is None:
             raise ValueError(
                 "character_state_service and internal character_id are required together"
             )
+        if character_life_service is not None and character_id is None:
+            raise ValueError("character_life_service requires identity.internal_id")
         if (
             character_id is not None
             and character_state_service is None
             and character_timezone is None
+            and character_life_service is None
         ):
             raise ValueError(
                 "character_id requires State or Character Time configuration"
@@ -67,6 +72,7 @@ class Conversation:
         self._memory_recall_service = memory_recall_service
         self._memory_formation_service = memory_formation_service
         self._character_state_service = character_state_service
+        self._character_life_service = character_life_service
         self._state_transition_service = (
             CharacterStateTransitionService(character_state_service, self._clock)
             if character_state_service is not None
@@ -100,17 +106,23 @@ class Conversation:
         )
         character_state = None
         now_utc = self._clock.now_utc()
-        time_snapshot = (
-            self._time_service.snapshot(now_utc)
-            if self._time_service is not None
-            else None
-        )
         if self._state_transition_service is not None:
             # character_id is validated as the stable identity.internal_id UUID.
             assert self._character_id is not None
             character_state = self._state_transition_service.apply_elapsed_time(
                 self._character_id, now_utc
             ).after_state
+        time_snapshot = (
+            self._time_service.snapshot(now_utc)
+            if self._time_service is not None
+            else None
+        )
+        life_context = None
+        if self._character_life_service is not None:
+            assert self._character_id is not None
+            life_context = self._character_life_service.get_life_context(
+                self._character_id
+            )
         recalled_memories: tuple[MemoryPromptCandidate, ...] = ()
         if self._memory_recall_service is not None:
             recall_result = self._memory_recall_service.recall(
@@ -123,6 +135,7 @@ class Conversation:
             recalled_memories,
             character_state,
             time_snapshot,
+            life_context,
         )
         reply = self._llm_client.complete(messages)
         assistant_archive_id = self._archive_store.append_archive_message(

@@ -1,6 +1,15 @@
 schema_version: "0.1"
 timezone: "Asia/Shanghai" # 开发期 Character 时区配置，不代表用户设备或所在地
 
+# 来源：Character Design 第 3 节学校/居住与第 6 节教育生活区；仅用于首次初始化。
+initial_life_context:
+  life_stage: student
+  home_reference: "住宅区的家"
+  school_reference: "学校"
+  primary_area_reference: "教育生活区"
+  current_location_reference: null # 设计未规定此刻的位置，不能自动推断在家或学校
+  current_role: "学生"
+
 identity:
   internal_id: "dccb85ed-04ce-4d8f-a135-f60387eaad9e" # 稳定机器身份 UUID，不作为日常称呼
   development_id: "SI-001" # 开发代号，不等于正式姓名

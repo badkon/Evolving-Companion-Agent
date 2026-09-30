@@ -28,7 +28,7 @@ Offline duration is `now_utc - last_interaction_at`; no prior interaction yields
 
 ## 7. Conversation Integration
 
-Conversation archives the user message, obtains one UTC timestamp, builds a Time Snapshot and applies State elapsed transition with that same timestamp, then proceeds through recall, Prompt, and LLM. After assistant archival, a completion timestamp records the successful interaction. Archive timestamps themselves remain storage-managed.
+Conversation archives the user message, obtains one UTC timestamp, applies State reconciliation and builds a Time Snapshot with that same timestamp, then proceeds through recall, Prompt, and LLM. After assistant archival, a completion timestamp records the successful interaction. Archive timestamps themselves remain storage-managed. B2 reconciliation uses persisted field-level State anchors independently of last interaction; see [B2](b2_temporal_state_reconciliation_v01.md).
 
 ## 8. State Integration
 
