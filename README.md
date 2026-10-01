@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 开发阶段：**A5 — QQ Private Chat Alpha Adapter Core v0.1 — Complete**（真实 QQ transport 尚未实现）。
+- 开发阶段：**A5.1 — OneBot WebSocket Transport v0.1 — Complete**（本地 Fake Server 验证，未真实登录 QQ）。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
@@ -29,6 +29,8 @@ B4 建立最小静态 World Place 层，固定 UUID seed 初始化到 SQLite；L
 ## 开发环境
 
 A5 已建立离线 QQ 私聊 Adapter Core：安全过滤后仅调用既有 Conversation 的 `send(text)`，角色回复原样返回；不登录 QQ、不启动 SnowLuma、不建立网络连接。设计与运行边界见 [A5 QQ Private Alpha](docs/a5_qq_private_alpha_v01.md)。完全离线检查：`python scripts/run_qq_adapter_smoke.py`。
+
+A5.1 新增真实 forward OneBot WebSocket client，仍不负责启动 / 登录 SnowLuma。配置 `SI_QQ_BOT_USER_ID`、逗号分隔的 `SI_QQ_ALLOWED_USER_IDS`、可选 `SI_ONEBOT_WS_URL` / `SI_ONEBOT_ACCESS_TOKEN` 后，使用 `python -m evolving_companion.qq_transport` 启动（还需既有 DeepSeek key）。仅本地 Fake Server 检查：`python scripts/run_onebot_transport_smoke.py`，不需要任何 key、QQ 或 SnowLuma。见 [A5.1 Transport](docs/a5_1_onebot_transport_v01.md)。
 
 需要 Python **3.12 或更高版本**。在仓库根目录创建虚拟环境：
 

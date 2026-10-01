@@ -6,7 +6,7 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — A5 QQ Private Chat Alpha Adapter Core v0.1 Complete
+## 当前工程状态 — A5.1 OneBot WebSocket Transport v0.1 Complete
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
@@ -31,19 +31,23 @@ Character 的身份与长期状态不应绑定于特定模型、操作系统、�
 
 ## 2. 基本结构
 
-A5 新增纯同步协议边界，尚无真实 transport：
+A5 保持同步协议边界；A5.1 增加 forward WebSocket transport（仅 Fake Server 验证）：
 
 ```text
 QQ
 ↓
-SnowLuma / OneBot Transport [future real transport]
+SnowLuma OneBot WS Server [external deployment]
+↓
+OneBotWebSocketTransport [async connection / echo / delivery]
 ↓
 QQPrivateChatAdapter
 ↓ send(text)
 Conversation Core
 ```
 
-SnowLuma 不包含 Character logic；Adapter 仅验证 friend 私聊文本、allowlist、自身消息和有界内存去重，然后原样返回 Character response。QQ ID / event JSON 不进入 Core；无效或不允许事件不会 Archive，Core 失败不会被自动重跑。去重仅在同实例有限缓存内有效，必须逐轮调用。未实现登录、连接或发送，不修改 Memory / State / World。详见 [A5 QQ Private Alpha](a5_qq_private_alpha_v01.md)。
+SnowLuma 不包含 Character logic；Adapter 仅验证 friend 私聊文本、allowlist、自身消息和有界内存去重，然后原样返回 Character response。QQ ID / event JSON 不进入 Core；无效或不允许事件不会 Archive，Core 失败不会被自动重跑。去重仅在同实例有限缓存内有效，必须逐轮调用。详见 [A5 QQ Private Alpha](a5_qq_private_alpha_v01.md)。
+
+A5.1 transport 串行以 asyncio.to_thread 调用 Adapter，Store 各方法创建 / 关闭独立 SQLite connection，不跨线程共享常驻连接。仅发送 send_private_msg 普通文本动作并按 echo 关联 ack，有限重连保留 Adapter cache。delivery failure 不回滚 Core / Archive / History，不重跑 Conversation。入口 wiring 位于 qq_cli.py，未改变 Character Core 或 DB schema，未实现 SnowLuma 登录 / 启动。详见 [A5.1 OneBot Transport](a5_1_onebot_transport_v01.md)。
 
 当前总体方向：
 

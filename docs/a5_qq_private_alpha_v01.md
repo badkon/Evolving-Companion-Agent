@@ -107,6 +107,8 @@ result = adapter.handle_event(parsed_event)
 
 ## 12. Next Stage: Real OneBot Transport
 
+A5.1 已新增 forward WebSocket client、echo correlation 和有限 reconnect，详见 [A5.1 OneBot Transport](a5_1_onebot_transport_v01.md)。A5 本文保留为 Adapter Core 的范围记录；下述“未来 transport”现在已有离线验证实现，但尚无真实 SnowLuma / QQ 登录和投递验证。Adapter 本身未扩大职责或修改过滤规则。
+
 未来另行实现接收 / 鉴权、连接账号校验、消息串行调度与发送，并验证失败 / 重连语义。SnowLuma 不包含 Character logic；真实 OneBot action 构造属于 transport，当前 ExternalChatResponse 不是已执行的发送 API。
 
 本阶段没有启动上述工作，没有真实 QQ 登录或外部消息发送。
