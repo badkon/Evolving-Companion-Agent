@@ -98,6 +98,7 @@ B4 中 `/world` 列出地点；`/life location <canonical name>` 要求精确唯
 
 - [项目愿景](docs/vision.md)
 - [架构原则与工程状态](docs/architecture.md)
+- [A3–B4 Milestone Architecture Review](docs/milestone_a3_b4_architecture_review.md)
 - [Character Constitution](docs/character-constitution.md)
 - [Character Identity](docs/identity.md)
 - [System Governance](docs/system-governance.md)
