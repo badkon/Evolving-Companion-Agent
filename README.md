@@ -92,6 +92,7 @@ B4 中 `/world` 列出地点；`/life location <canonical name>` 要求精确唯
 ## 设计文档
 
 [Character Structural Design](docs/character/character-design.md) 是当前角色结构性设计的版本控制 **Source of Truth**。
+[SI World Design v0.1](docs/world_design_v01.md) 是当前世界空间规划的人类可读 source of truth；它与只包含最小运行地点的 B4 World Seed 分开维护。
 [DOCX 版本](docs/character/SI-001_Character_Design_Structural_v0.2.docx) 作为导出和展示产物（export / presentation artifact）。
 设计文档描述长期蓝图，不代表当前已实现的功能。
 
