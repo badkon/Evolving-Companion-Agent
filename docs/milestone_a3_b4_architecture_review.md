@@ -256,3 +256,76 @@ A3–B4 的核心本体边界、稳定 Character / World identity、active-only 
 原 verdict 保留为审查时的历史判断；其要求立即 patch 的 F01 现已 resolved，不再阻塞继续开发。P2 是后续数据接口与迁移需要认真处理的约束，尤其 F02 / F03 / F04 不应被未来工具误当已经严格保证；它们不要求当前实现 Memory v2。
 
 可以继续 World Simulation 的架构设计，但不能声称当前系统已经能模拟世界。WorldEntity 保持 identity 层、Life 保持引用层，未来 Observation 和 Action Resolver 另行定义；本次没有实现任何未来模块。
+
+## QQ Alpha P2 Triage
+
+### 范围与判断条件
+
+日期：2026-10-01。仅重新分类当前剩余 **F02–F06，共五个 P2**，不改变原 severity，不修生产代码、schema、Prompt 或迁移，不处理 P3。F01 的完成边界已 resolved。
+
+按 SI-001、单 QQ 账号私聊、单进程、低频个人使用、DeepSeek / SQLite、可人工观察并允许重启判断，不以大型生产 SLA 或完美语义记忆为准。SnowLuma / OneBot 是拟接入入口，本次没有实现或验证 adapter。下面的 readiness 是剩余 P2 是否阻塞 Alpha 的判断，不是 QQ integration 已完成的声明。
+
+沿用当前同步核心的逐轮调用、固定 internal UUID、固定完整 World seed 和同一 Store 初始化契约；“单进程”本身不保证未来异步 adapter 不并发调用。若引入并行 turn、其他用户 / Character、外部 Memory 导入、聊天触发开发命令或 World 写能力，应重新 triage，不能直接沿用此结论。
+
+| Finding | Current Severity | QQ Alpha Category | Risk | Recommendation |
+| --- | --- | --- | --- | --- |
+| F02 — Evidence integrity | P2 | FIX SOON, NOT BLOCKING | 存在性 / chunk membership 不证明 candidate 的语义支持；正常自动 extraction 也可能接受内容错误但 refs 合法的 save。外部伪造 chunk 与直接 SQL 的结构风险在当前调用路径中不是常规触发源 | 尽快补针对不支持内容、assistant-only 用户事实、伪造 chunk 的反例评估，并明确结构验证与语义 gate 的保证边界；不要以增加 FK 或原文一致性检查冒充语义真实性证明 |
+| F03 — Supersession representation | P2 | DEFER | 单引用字段与关系表不联动，但生产写状态和关系表、生产 recall 按 status 过滤；当前不依赖旧单引用字段作 recall 判据 | Alpha 继续只用现行 consolidation API，不新增单引用写法或混合查询；将 canonical 表 / legacy 字段统一留给后续独立兼容清理，不需要现在迁移 |
+| F04 — Consolidation direction | P2 | FIX SOON, NOT BLOCKING | 同批多候选可进入互相比较，“old”不保证时间更早；可能错误选择 active 版本。这是当前可达 edge case，不是纯未来扩容问题 | 尽快补同批相反陈述 / 多候选顺序测试并定义比较 eligibility；不能简单把保存时间或 candidate 数组顺序当现实事件顺序。不要求 Alpha 前完成完整 temporal grounding |
+| F05 — Life legacy migration | P2 | DEFER | 子集 seed 首次迁移会漏解析并永久标记；正常启动使用固定完整 seed，迁移不覆盖已有 UUID identity，旧文本保留 | 当前入口坚持完整 seed → migration → Life；观察 unresolved diagnostics。将子集初始化保护与旧值重新解析工具延后，不在 Alpha 入口做增量 World seed 初始化 |
+| F06 — Prompt trust boundary | P2 | FIX SOON, NOT BLOCKING | Memory 文本进入 system 可能被误当指令，影响回复并间接污染后续 extraction；当前没有工具执行 / World SQL 写入，role/activity/地点名也不是普通聊天自动写入 | 尽快明确数据不是指令并做恶意文本反例检查；在接入不可信内容源或赋予行动权限前重新审查。不为此重写 Prompt composition 或引入安全框架 |
+
+### F02：证据引用、原文一致性与语义支持分别判断
+
+代码依据为 `memory_extraction.py:MemoryExtractor.extract_memories / persist_saved_candidates`、`memory_formation.py:process_turn` 和 `storage.py:create_memory / add_evidence`：
+
+1. **引用有效性**：save 必须有非空、无重复、属于本轮 chunk 的 refs；Store 检查对应 Archive ID 存在。引用任意其他轮已存在的 ID 仍会被 chunk membership 拒绝，不是“只要数据库中存在就接受”。
+2. **原文一致性**：正常 `Conversation.send` 使用同一 user / assistant 文本归档并构造 formation chunk；当前 LLM 只返回 candidate，不负责改写该 chunk。外部调用仍可提供真实 ID 配错误 role/content，程序没有重新读取原文比较。
+3. **内容被证据支持**：Pydantic 验证结构，不验证自然语言蕴含。假设 user 原文是“我喜欢茶”，LLM 返回 save “用户喜欢咖啡”并引用该 user ID，若其他结构约束满足且没有 active 内容重复，**当前代码会接受**。这只是静态路径示例，不是本次真实模型结果。assistant-only evidence 支持用户事实也没有 Python 级语义 / 来源校验，限制主要写在 extraction prompt。
+
+因此错误 evidence chain（准确 ID 指向不支持的文本）和错误长期 Memory 是真实可能性，不能只用 FK 或重读原文消除。但当前 prompt 已要求仅从对话提取、宁缺毋滥、区分 assistant 与 user、reject / uncertain 弱推断；A3 的有限真实 smoke 验证了部分正常案例，**没有测得错误率，不能断言高概率污染或零风险**。
+
+错误 Memory 可以进入后续 recall / consolidation 并放大，所以不长期 DEFER。它不自动改写或删除 Archive，旧 superseded Memory 和 evidence 也保留，因此不是已证实不可恢复的原始数据损坏。保留记录只提供追查 / 重建依据，不代表当前已经有一键语义修复工具。在不要求 perfect semantic memory 的个人 Alpha 中归 FIX SOON，可带着观察，但不能把自动形成结果当成已验证事实。
+
+### F03：双重表达不等于 active-only 失效
+
+- 生产 extraction 调用 `create_memory` 时不传 `supersedes_memory_id`；production consolidation 调用 `supersede_memories`，事务更新旧 status 并写 `memory_supersessions`。
+- supersession 历史 API `get_superseded_memories` 读取关系表；生产 retrieval 读取 `list_active_memories` 的 status 过滤，不读取单引用字段决定 active。
+- 两种表达确实可以 divergence：正常 consolidation 后关系表有 link，而新记录单引用仍为 None；手动 `create_memory(..., supersedes_memory_id=...)` 则可有单引用、无关系 link，旧 status 仍 active。现有 `test_storage.py` 验证后一种行为。
+- 这不证明当前私人数据库出现异常。本次没有读取 runtime 数据，不能回答其实际行状态。正常生产的关系表 / status 路径没有因此泄漏 superseded Memory；未来若用单引用重新推导 recall 状态才会出问题。
+
+当前主要是历史兼容语义债务，不必 QQ Alpha 前统一 schema；Alpha 不应新增调用旧字段来执行 supersede。
+
+### F04：当前可达，但不足以升级为强制 blocker
+
+`MemoryFormationService.process_turn` 先保存全部 candidates，再按 saved 顺序 consolidation；`process_new_memory` 对其他候选只检查 active，不限制形成批次或先后。即使单进程、低频，某轮输出多个候选时也可出现后保存项被标为 old。
+
+错误方向可能使新有效内容成为 superseded，从 active-only recall 消失，不能用“低并发”掩盖。另一方面 status 改变仍需要 judge 明确返回 supersede_old；保守 prompt 对不同时间范围、并列或可同时成立内容要求 keep_both。静态代码确认的是不受保证的方向，不是每次多候选都必然写错，当前没有高概率累积错误的实测证据。原文、旧内容与关系 link 保留，并非物理删除。
+
+归 FIX SOON 而非长期 DEFER；优先做受控反例和最小 eligibility 决策。若 Alpha 实测反复出现最新版本被旧候选 supersede，应升级为 blocker 后再继续长期使用，不能把它当一般措辞问题。
+
+### F05：正常启动与错误子集启动分开
+
+`cli.py:main` 从固定 `data/worlds/si_world.yaml` 加载完整 seed；顺序为 Store schema 初始化 → World seed 插入 → legacy Life migration → Life service / Conversation。当前标准入口没有先传空 seed 或部分 seed 来做首次迁移。
+
+World seed 插入与 Life 转换分别事务提交：插入成功、转换异常时，下次完整初始化可继续处理 marker=0 行；转换事务本身不会留下半行完成状态。转换成功后每行 marker=1，包括 unresolved 名称，不会在重启时自动再解析。这避免把开发者显式清空值填回，但意味着后来补 seed 也不会自动恢复旧引用。
+
+原 legacy 文本未删除，可以未来人工确认后重新 resolve；当前没有自动 retry unresolved 的工具，不能说它会自行修复。子集初始化确有风险，现有 World 测试也使用补充 seed，但这些增量测试不等于标准入口先用子集迁移未处理旧库。当前固定完整启动路径下不阻塞 Alpha；若出现 unresolved，先检查诊断和原值，而非猜测新 UUID。
+
+### F06：不是 Prompt duplication finding
+
+原 P2 是数据文本进入 system 的信任边界，不是“Prompt 太长 / 重复”。重复认知边界尚无冲突或实测长度退化证据，不新增 required Prompt 重构。
+
+Memory 来自 LLM extraction，仍可包含用户诱导的指令文本；“只是候选 / 不是系统事实”并不等价于明确禁止执行其指令。私聊并不保证完全没有不可信文本，但当前仅个人、无外部内容源、无自主工具或行动执行，且 Life / State 的自由文本来自显式开发操作，风险面有限。这里没有实时攻击测试或质量概率依据；归 FIX SOON，不以未经验证的 attack success 假设强行升 blocker。未来 adapter 也不能因为显示名称或聊天指令就授予内部 developer 写权限。
+
+### QQ Alpha Minimum Safety Bar 与最终建议
+
+这五个 P2 没有发现直接使用 development_id 错绑 Character、破坏原始 Archive、回退 State / Time 锚点的正常写路径。F01 已修复主回复 completion continuity；现有测试对 restart persistence 和失败路径提供有限代码证据，不是未来 OneBot adapter 的可靠性证明。Adapter disconnect / send failure、账号来源隔离、消息去重及逐轮调用仍需在独立 integration 任务中验证，本次不实现或另造 P2 finding。
+
+统计：剩余 P2 **5**；BLOCKER **0**；FIX SOON **3**；DEFER **2**。
+
+**Required before Alpha（仅针对本次剩余 P2）：无，最小 required patch 集合为空。** F02 / F04 / F06 为后续尽快处理列表，不混入 required list。以上判断没有批准读取私人数据库、迁移旧库或增加自动语义审判系统。
+
+**Final Recommendation：QQ ALPHA READY。** 含义是：在上述限定运行假设和已修复 F01 的基础上，剩余 P2 不阻止进入受控个人 Alpha 实测；不是 QQ adapter 已实现、Memory 语义已证明可靠或可以无人值守运行的声明。应人工观察 formation / consolidation 诊断及异常记忆，并在触发范围扩大或发现反复污染后重新分类。
+
+本次仅追加此 triage 节；执行 `ruff check .`、`ruff format --check .`、`git diff --check`，不运行 pytest、真实模型或 benchmark，不改生产代码、schema、测试及 fixture，不读写 runtime 数据或 secrets。
