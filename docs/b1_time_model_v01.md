@@ -22,13 +22,15 @@ The Character Seed has an IANA timezone validated with `zoneinfo.ZoneInfo`. SI-0
 
 `last_interaction_at` means the time after an assistant response was successfully generated and archived. It is not the incoming user-message time, Memory Formation time, Event time, or State update time. A failed LLM response does not update it.
 
+Assistant archival defines core conversation completion. If subsequent interaction timestamp persistence fails, the stored anchor may lag behind; Conversation returns the archived reply, preserves history, records only the error type in `last_interaction_error`, and does not invent a fallback timestamp.
+
 ## 6. Offline Duration
 
 Offline duration is `now_utc - last_interaction_at`; no prior interaction yields `None`. `character_runtime` stores one row per `identity.internal_id` UUID. A backwards clock yields zero duration and `clock_moved_backwards`; it does not move the stored anchor backwards.
 
 ## 7. Conversation Integration
 
-Conversation archives the user message, obtains one UTC timestamp, applies State reconciliation and builds a Time Snapshot with that same timestamp, then proceeds through recall, Prompt, and LLM. After assistant archival, a completion timestamp records the successful interaction. Archive timestamps themselves remain storage-managed. B2 reconciliation uses persisted field-level State anchors independently of last interaction; see [B2](b2_temporal_state_reconciliation_v01.md).
+Conversation archives the user message, obtains one UTC timestamp, applies State reconciliation and builds a Time Snapshot with that same timestamp, then proceeds through recall, Prompt, and LLM. After successful assistant archival, in-memory history is updated first; completion timestamp persistence and Memory Formation then run independently as best-effort side effects. Timestamp failure does not skip formation. Assistant archival failure still propagates and prevents completed history, timestamp updates, and formation. Archive timestamps themselves remain storage-managed. B2 reconciliation uses persisted field-level State anchors independently of last interaction; see [B2](b2_temporal_state_reconciliation_v01.md).
 
 ## 8. State Integration
 

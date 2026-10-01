@@ -1,4 +1,10 @@
 from pathlib import Path
+import sqlite3
+from collections.abc import Mapping
+from datetime import datetime, timedelta, timezone
+from uuid import UUID
+
+import pytest
 
 from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.character_projection import (
@@ -6,6 +12,8 @@ from evolving_companion.character_projection import (
     ProjectedCharacterContext,
 )
 from evolving_companion.conversation import Conversation, TextCompletionClient
+from evolving_companion.clock import FixedClock
+from evolving_companion.memory_formation import MemoryFormationResult
 from evolving_companion.prompting import Message, PromptBuilder
 from evolving_companion.storage import SQLiteStore
 
@@ -129,6 +137,152 @@ def test_conversation_appends_successful_turns_in_order_in_memory(
         {"role": "user", "content": "你好"},
         {"role": "assistant", "content": "你好呀。"},
     ]
+
+
+@pytest.mark.parametrize("metadata_fails", [False, True])
+@pytest.mark.parametrize("formation_fails", [False, True])
+def test_completed_turn_survives_metadata_and_formation_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    metadata_fails: bool,
+    formation_fails: bool,
+) -> None:
+    seed = load_character_seed_data(
+        Path(__file__).resolve().parents[1] / "data/characters/si_001.yaml"
+    )
+    key = seed.identity.internal_id
+    store = SQLiteStore(tmp_path / "completion.db")
+    clock = FixedClock(datetime(2026, 10, 1, tzinfo=timezone.utc))
+    old_anchor = clock.now_utc() - timedelta(hours=1)
+    store.record_last_interaction(key, old_anchor)
+    original_record = store.record_last_interaction
+
+    def fail_metadata(character_id: UUID, at: datetime) -> datetime:
+        assert conversation.history[-1]["content"] == "第一条回复"
+        raise OSError("private database failure detail")
+
+    if metadata_fails:
+        monkeypatch.setattr(store, "record_last_interaction", fail_metadata)
+
+    class Formation:
+        calls = 0
+
+        def process_turn(
+            self,
+            user_archive_message: Mapping[str, str],
+            assistant_archive_message: Mapping[str, str],
+        ) -> MemoryFormationResult:
+            self.calls += 1
+            assert (
+                conversation.history[-1]["content"]
+                == assistant_archive_message["content"]
+            )
+            with sqlite3.connect(store.path) as connection:
+                archived = connection.execute(
+                    "SELECT role, content FROM archive_messages WHERE id = ?",
+                    (assistant_archive_message["id"],),
+                ).fetchone()
+            assert archived == ("assistant", assistant_archive_message["content"])
+            if formation_fails:
+                raise RuntimeError("private formation failure detail")
+            return MemoryFormationResult()
+
+    formation = Formation()
+    client = FakeLLMClient(["第一条回复", "第二条回复"])
+    conversation = Conversation(
+        client,
+        CharacterProjector().project(seed),
+        store,
+        memory_formation_service=formation,
+        character_id=key,
+        character_timezone=seed.timezone,
+        clock=clock,
+    )
+
+    assert conversation.send("第一条输入") == "第一条回复"
+    assert conversation.history == (
+        {"role": "user", "content": "第一条输入"},
+        {"role": "assistant", "content": "第一条回复"},
+    )
+    assert store.get_last_interaction_at(key) == (
+        old_anchor if metadata_fails else clock.now_utc()
+    )
+    assert conversation.last_interaction_error == (
+        "OSError" if metadata_fails else None
+    )
+    assert formation.calls == 1
+    result = conversation.last_memory_formation_result
+    assert result is not None
+    assert result.error == ("RuntimeError" if formation_fails else None)
+
+    monkeypatch.setattr(store, "record_last_interaction", original_record)
+    clock.advance(minutes=1)
+    assert conversation.send("第二条输入") == "第二条回复"
+    assert client.requests[1][1:3] == list(conversation.history[:2])
+    assert len(conversation.history) == 4
+    assert store.get_last_interaction_at(key) == clock.now_utc()
+    assert conversation.last_interaction_error is None
+    assert formation.calls == 2
+
+
+@pytest.mark.parametrize("failure_stage", ["llm", "assistant_archive"])
+def test_incomplete_turn_does_not_update_completion_metadata_or_form_memory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_stage: str
+) -> None:
+    seed = load_character_seed_data(
+        Path(__file__).resolve().parents[1] / "data/characters/si_001.yaml"
+    )
+    key = seed.identity.internal_id
+    store = SQLiteStore(tmp_path / "incomplete.db")
+    clock = FixedClock(datetime(2026, 10, 1, tzinfo=timezone.utc))
+    old_anchor = clock.now_utc() - timedelta(hours=1)
+    store.record_last_interaction(key, old_anchor)
+    original_append = store.append_archive_message
+
+    def append(conversation_id: str, role: str, content: str) -> str:
+        if role == "assistant":
+            raise RuntimeError("assistant archive failure")
+        return original_append(conversation_id, role, content)
+
+    if failure_stage == "assistant_archive":
+        monkeypatch.setattr(store, "append_archive_message", append)
+
+    class Client:
+        def complete(self, messages: list[Message]) -> str:
+            if failure_stage == "llm":
+                raise RuntimeError("main LLM failure")
+            return "未归档的回复"
+
+    class Formation:
+        calls = 0
+
+        def process_turn(
+            self,
+            user_archive_message: Mapping[str, str],
+            assistant_archive_message: Mapping[str, str],
+        ) -> MemoryFormationResult:
+            self.calls += 1
+            return MemoryFormationResult()
+
+    formation = Formation()
+    conversation = Conversation(
+        Client(),
+        CharacterProjector().project(seed),
+        store,
+        memory_formation_service=formation,
+        character_id=key,
+        character_timezone=seed.timezone,
+        clock=clock,
+    )
+    with pytest.raises(RuntimeError):
+        conversation.send("输入")
+    assert conversation.history == ()
+    assert store.get_last_interaction_at(key) == old_anchor
+    assert formation.calls == 0
+    with sqlite3.connect(store.path) as connection:
+        assert connection.execute(
+            "SELECT role, content FROM archive_messages"
+        ).fetchall() == [("user", "输入")]
 
 
 def test_failed_llm_request_does_not_append_history(tmp_path: Path) -> None:

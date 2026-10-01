@@ -88,6 +88,7 @@ class Conversation:
             else None
         )
         self._last_memory_formation_result: MemoryFormationResult | None = None
+        self._last_interaction_error: str | None = None
         self.conversation_id = str(uuid4())
         self._history: list[Message] = []
 
@@ -100,6 +101,11 @@ class Conversation:
     def last_memory_formation_result(self) -> MemoryFormationResult | None:
         """Return internal diagnostics for the most recent completed turn."""
         return self._last_memory_formation_result
+
+    @property
+    def last_interaction_error(self) -> str | None:
+        """Return only the metadata error type for the most recent completed turn."""
+        return self._last_interaction_error
 
     def send(self, user_message: str) -> str:
         user_archive_id = self._archive_store.append_archive_message(
@@ -142,14 +148,20 @@ class Conversation:
         assistant_archive_id = self._archive_store.append_archive_message(
             self.conversation_id, "assistant", reply
         )
-        if self._time_service is not None:
-            self._time_service.record_successful_interaction(self._clock.now_utc())
+        # Successful assistant archival is the core completion boundary.
         self._history.extend(
             (
                 {"role": "user", "content": user_message},
                 {"role": "assistant", "content": reply},
             )
         )
+        self._last_interaction_error = None
+        if self._time_service is not None:
+            try:
+                self._time_service.record_successful_interaction(self._clock.now_utc())
+            except Exception as error:
+                # Metadata failure must not invalidate an archived reply or history.
+                self._last_interaction_error = type(error).__name__
         self._last_memory_formation_result = None
         if self._memory_formation_service is not None:
             try:

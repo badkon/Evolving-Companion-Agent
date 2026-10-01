@@ -143,9 +143,9 @@ Memory recall（旧 history + 当前 user）
 Prompt → 主 LLM
 ↓
 Archive assistant（独立提交）
-↓ completion Clock.now_utc → last_interaction
-↓
 更新 in-memory history
+↓
+completion Clock.now_utc → best-effort last_interaction
 ↓
 Memory formation：extract → save evidence-backed candidates
 ↓
@@ -156,9 +156,9 @@ return reply → CLI 打印
 
 主 LLM 失败不归档 assistant、不更新 history、不形成 Memory。此前 user Archive、真实时间导致的 State 归一、首次 Life bootstrap 可以已经提交；它们不是根据失败回复制造的亲历记忆。
 
-Formation 故障被 Conversation 转为内部诊断，不丢弃已经完成的回复。但 assistant Archive 后的 last-interaction 故障没有相同隔离：会跳过 history、formation 和 return，CLI 报请求失败。这是 F01。
+F01 已 **PATCHED / RESOLVED**：assistant Archive 成功后先更新 history；last-interaction 写入失败仅记录异常类型到 `last_interaction_error`，不撤销 Archive、不伪造 timestamp、不阻止 formation 或 reply return。数据库 last-interaction 允许暂时滞后。主 LLM / assistant Archive 失败仍抛错，不进入这些完成后操作。
 
-只用临时内存 fake（没有 SQLite 文件）注入 `record_last_interaction` 写失败后，实际得到 `OSError`、已归档角色序列 `['user', 'assistant']`、`history_length = 0`。这是失败路径复现，不是声称真实 runtime 数据已经损坏。
+修复前审查曾用内存 fake 复现 `OSError`、两条 Archive 和空 history；这是历史失败路径证据，不是当前行为或真实 runtime 损坏记录。修复测试使用临时 SQLite、FixedClock 和 fake LLM / formation，覆盖时间写入失败后回复、历史和下一轮连续性，以及原锚点保留、formation 独立容错和 assistant Archive 失败。
 
 Recall / reranker / Life / World 故障也可能发生在主 LLM 前；目前没有降级策略。同步 formation / consolidation 在 CLI 打印前执行，所以“回复先完成”不等于“用户先看到回复”。
 
@@ -214,7 +214,7 @@ Schema 初始化、World seed 插入、Life 数据迁移是不同提交阶段，
 6. **需要 Action Resolver**，校验 intent、权限与世界结果；不能让 LLM 直接更新 SQL / Life / State。
 7. PromptBuilder、MemoryExtractor、Clock、passive State reconciliation、Life Context 和当前 CharacterEventService 都不应承担世界模拟。未来模拟产生的事实也不能无条件成为亲历 Memory。
 
-结论：具备继续设计 World Simulation 的最小 identity / binding 基础；**尚不具备运行 World Simulation 的能力**。先处理 F01，再定义 Observation / Action 的边界；不要求现在实现这些模块。
+结论：具备继续设计 World Simulation 的最小 identity / binding 基础；**尚不具备运行 World Simulation 的能力**。F01 已修复；后续仍需定义 Observation / Action 的边界，不要求现在实现这些模块。
 
 ## 14. Findings
 
@@ -222,7 +222,7 @@ P0：当前数据 / 身份可能损坏；P1：继续开发前应修；P2：可�
 
 | ID | Severity | Area | Finding | Evidence | Recommended Action |
 | --- | --- | --- | --- | --- | --- |
-| F01 | P1 | Conversation completion | assistant 已归档后，last-interaction 写失败仍导致整轮报错、history 未更新、回复不返回；与 formation best-effort 边界不一致 | `conversation.py:send` assistant Archive → `record_successful_interaction` → history；内存 fake 复现 OSError / 两条 Archive / 空 history | 先明确成功回复与辅助 bookkeeping 的故障边界，补一个局部失败路径 patch；不要扩展通用事务框架 |
+| F01 | P1 — PATCHED / RESOLVED | Conversation completion | 原 last-interaction 故障会阻止 history / return；现以 assistant Archive 成功为完成边界，先更新 history，后独立尝试时间写入与 formation | `conversation.py:send` / `last_interaction_error`；`tests/test_conversation.py` 临时数据库失败路径与下一轮测试 | 已完成局部 patch；不引入大事务、重试队列或后台 worker |
 | F02 | P2 | Evidence integrity | chunk role/content 未核对 Archive 原文；evidence_ref 无 Archive FK。错误外部调用可以把真实 ID 与错误文本关联 | `memory_formation.py:process_turn`；`memory_extraction.py:persist_saved_candidates`；`storage.py:create_memory/add_evidence/SCHEMA` | 外部导入或复用 formation 前明确可信输入边界、核对 Archive；直接 SQL / 删除能力引入前补证据引用保护 |
 | F03 | P2 | Supersession representation | `memories.supersedes_memory_id` 与 `memory_supersessions` 双重表达不联动；前者不改变旧 status，生产后者不填写前者 | `storage.py:create_memory`、`supersede_memories`、`get_superseded_memories`；现有单引用测试保留旧 active | 文档和 API 明确 canonical supersession 表与 legacy 字段含义，后续查询不要混用两者 |
 | F04 | P2 | Consolidation direction | candidate “old”没有时间方向约束；同批先保存全部再处理，可能把后保存 Memory 当旧记录，judge 输入仅 ID/content | `memory_formation.py:process_turn`；`memory_consolidation.py:process_new_memory` / judge | 后续补最小同批顺序验证并明确新旧判定；不能只把检索顺序当因果顺序 |
@@ -235,7 +235,7 @@ P0：当前数据 / 身份可能损坏；P1：继续开发前应修；P2：可�
 | F11 | P3 | Operational / semantic limits | history 无界；recall 无 relevance threshold；formation / 多次 judge 同步阻塞 return；语义质量只有有限 smoke evidence | `conversation.py`、`memory_recall.py`、`memory_formation.py`、A3 closure | 作为已接受限制记录，长会话前评估上下文与延迟；不在本次加 summary、threshold 或 worker |
 | F12 | P3 | Simulation / concurrency | 当前只有静态 Place identity，无 Observation、Action Resolver、事件 replay 或多写者一致性保障 | `world.py`、`character_events.py`、Store 读后写 API | 后续独立定义世界动态与权限边界；不让当前小模块隐式升级为 simulator |
 
-统计：**P0 = 0，P1 = 1，P2 = 5，P3 = 6**。没有观察到当前真实 runtime identity / Archive 损坏，不以未来共享库或外部错误调用推断 P0。
+原审查统计：**P0 = 0，P1 = 1，P2 = 5，P3 = 6**。P1 中 F01 已 resolved，当前未解决 P1 为 **0**；其他发现未在本次 patch 中处理。没有观察到当前真实 runtime identity / Archive 损坏，不以未来共享库或外部错误调用推断 P0。
 
 ## 15. Deferred / Accepted Limitations
 
@@ -253,6 +253,6 @@ World Design 是人类设计依据，World Seed 是最小 runtime 初始化输�
 
 A3–B4 的核心本体边界、稳定 Character / World identity、active-only Memory、逐字段 temporal anchors 和 Life UUID binding 足以保留并继续演进，不需要回滚或大规模重构。
 
-建议继续开发前先局部 patch F01，避免新增上下文和世界模块进一步放大“已产生回复但整轮报失败”的不一致。P2 是后续数据接口与迁移需要认真处理的约束，尤其 F02 / F03 / F04 不应被未来工具误当已经严格保证；它们不要求当前实现 Memory v2。
+原 verdict 保留为审查时的历史判断；其要求立即 patch 的 F01 现已 resolved，不再阻塞继续开发。P2 是后续数据接口与迁移需要认真处理的约束，尤其 F02 / F03 / F04 不应被未来工具误当已经严格保证；它们不要求当前实现 Memory v2。
 
 可以继续 World Simulation 的架构设计，但不能声称当前系统已经能模拟世界。WorldEntity 保持 identity 层、Life 保持引用层，未来 Observation 和 Action Resolver 另行定义；本次没有实现任何未来模块。
