@@ -30,6 +30,8 @@ Character key 始终是 Seed 中固定的 `identity.internal_id` UUID，不是 d
 
 缺失 Life 行或当前位置为 None 时返回 unknown_location，不查询 NPC、不初始化 Life、不猜测地点。既有 CLI / QQ composition 在初始化 World 后显式初始化缺失 Life；这是入口原有初始化职责，不在 Observation 中执行。
 
+B8 可选增加瞬时 `day_period`，由 WorldTimeService 使用同一 observed_at 派生；unknown_location 仍允许该时间线索但禁止地点/人物信息。它不落库，不改变上述只读查询；CLI / QQ 已启用。详见 [B8](b8_lazy_world_time_v01.md)。
+
 ## 7. NPC Visibility Rule
 
 NPC 位置唯一来自 `world_npcs.place_entity_id`。同一个只读 SQLite 事务内读取 Life、相关 Place 名称与以下限定查询：

@@ -510,6 +510,7 @@ def test_no_model_calls_or_background_work(
         "pydantic",
         "evolving_companion.clock",
         "evolving_companion.character_life",
+        "evolving_companion.world_time",
     }
     assert not any(
         isinstance(node, (ast.AsyncFunctionDef, ast.Import)) for node in ast.walk(tree)

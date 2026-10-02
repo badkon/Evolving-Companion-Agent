@@ -29,6 +29,7 @@ from evolving_companion.qq_transport import OneBotWebSocketTransport
 from evolving_companion.storage import SQLiteStore
 from evolving_companion.observation import ObservationService
 from evolving_companion.world import WorldEntityService, load_world_seed
+from evolving_companion.world_time import WorldTimeService
 
 
 def create_conversation(resources: ExitStack) -> Conversation:
@@ -66,7 +67,9 @@ def create_conversation(resources: ExitStack) -> Conversation:
         character_timezone=seed.timezone,
         clock=clock,
         character_life_service=life_service,
-        observation_service=ObservationService(store, clock),
+        observation_service=ObservationService(
+            store, clock, world_time_service=WorldTimeService(seed.timezone, clock)
+        ),
     )
 
 

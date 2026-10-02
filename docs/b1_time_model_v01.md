@@ -20,7 +20,7 @@ The Character Seed has an IANA timezone validated with `zoneinfo.ZoneInfo`. SI-0
 
 ## 5. Last Interaction Semantics
 
-`last_interaction_at` means the time after an assistant response was successfully generated and archived. It is not the incoming user-message time, Memory Formation time, Event time, or State update time. A failed LLM response does not update it.
+`last_interaction_at` is written only after an assistant response was successfully generated and archived. B8 uses the shared turn timestamp for this write (not a second wall-clock sample at completion); LLM latency is not included in the anchor. It is not an Archive creation timestamp, Memory Formation time, Event time, or State update time. A failed LLM response does not update it.
 
 Assistant archival defines core conversation completion. If subsequent interaction timestamp persistence fails, the stored anchor may lag behind; Conversation returns the archived reply, preserves history, records only the error type in `last_interaction_error`, and does not invent a fallback timestamp.
 

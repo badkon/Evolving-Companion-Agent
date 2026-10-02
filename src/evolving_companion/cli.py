@@ -45,6 +45,7 @@ from evolving_companion.observation import ObservationService
 from evolving_companion.clock import SystemClock
 from evolving_companion.time_model import CharacterTimeService, format_offline_duration
 from evolving_companion.world import WorldEntityService, load_world_seed
+from evolving_companion.world_time import WorldTimeService
 
 
 def main() -> None:
@@ -109,7 +110,11 @@ def _run(resources: ExitStack) -> None:
             character_timezone=seed_data.timezone,
             clock=clock,
             character_life_service=life_service,
-            observation_service=ObservationService(store, clock),
+            observation_service=ObservationService(
+                store,
+                clock,
+                world_time_service=WorldTimeService(seed_data.timezone, clock),
+            ),
         )
     except ValueError as error:
         print(error)

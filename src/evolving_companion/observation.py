@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from evolving_companion.character_life import ProjectedLifeContext
 from evolving_companion.clock import Clock, SystemClock
+from evolving_companion.world_time import DayPeriod, WorldTimeService
 
 MAX_VISIBLE_NPCS = 20
 
@@ -23,6 +24,8 @@ class ObservationSnapshot(BaseModel):
     visible_npc_ids: tuple[UUID, ...] = ()
     truncated: bool = False
     status: Literal["available", "unknown_location"] = "unknown_location"
+    # 即时派生时段；即使位置未知也可提供，不代表经历或活动。
+    day_period: DayPeriod | None = None
 
     @field_validator("observed_at")
     @classmethod
@@ -65,9 +68,16 @@ class ObservationContextPort(Protocol):
 
 
 class ObservationService:
-    def __init__(self, store: ObservationStore, clock: Clock | None = None) -> None:
+    def __init__(
+        self,
+        store: ObservationStore,
+        clock: Clock | None = None,
+        *,
+        world_time_service: WorldTimeService | None = None,
+    ) -> None:
         self._store = store
         self._clock = clock or SystemClock()
+        self._world_time_service = world_time_service
 
     def capture_context(
         self, character_id: UUID, now_utc: datetime | None = None
@@ -79,7 +89,13 @@ class ObservationService:
             character_id=character_id,
             observed_at=now_utc if now_utc is not None else self._clock.now_utc(),
         ).observed_at
-        return self._store.capture_observation_context(character_id, stamp)
+        life, observation = self._store.capture_observation_context(character_id, stamp)
+        if self._world_time_service is not None:
+            period = self._world_time_service.snapshot(stamp).day_period
+            observation = ObservationSnapshot.model_validate(
+                observation.model_dump() | {"day_period": period}
+            )
+        return life, observation
 
     def observe(
         self, character_id: UUID, now_utc: datetime | None = None

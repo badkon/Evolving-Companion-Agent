@@ -202,7 +202,7 @@ class Conversation:
         self._last_interaction_error = None
         if self._time_service is not None:
             try:
-                self._time_service.record_successful_interaction(self._clock.now_utc())
+                self._time_service.record_successful_interaction(now_utc)
             except Exception as error:
                 # Metadata failure must not invalidate an archived reply or history.
                 self._last_interaction_error = type(error).__name__

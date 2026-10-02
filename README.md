@@ -32,6 +32,8 @@ B6 增加 [Observation Layer](docs/b6_observation_layer_v01.md)：CLI / QQ 每�
 
 B7 增加 [Action Intent / Resolver](docs/b7_action_resolver_v01.md)：仅受信任 developer/test 显式提交 typed move_to；位置更新与 terminal receipt 原子提交，action_id 持久化幂等，旧动作重放不改变当前位置。Life 普通部分更新也改为事务内读取最新行并仅 patch 显式字段，避免覆盖并发移动。没有聊天/LLM 动作解析、自主决策、NPC 行动或 Scheduler；不改 State / Memory。离线检查：`python scripts/run_world_action_smoke.py`，仅临时 DB。
 
+B8 增加 [Lazy World Temporal Context](docs/b8_lazy_world_time_v01.md)：按访问由共享 Clock 和已有 Character 时区计算当前时段，经 B6 环境区块简短投影；不持久化、无 Scheduler，不改变位置、NPC、State 或 Memory。Conversation 一轮只采样一次时间，成功交流记账复用本轮时间。离线检查：`python scripts/run_world_time_smoke.py`，包含 B8 单阶段与 B6+B7+B8 组合 smoke，仅使用临时 DB。
+
 ## 开发环境
 
 Linux 服务器完成 A7 安装并将 `/opt/si/app/.venv/bin` 加入 PATH 后，运行 `si setup` 安全配置 DeepSeek/SiliconFlow keys、API-only Memory 与 QQ/None；密钥输入 masked，不需要手工 export API key。Review 确认后原子保存配置、离线检查，再可选启动服务；之后运行 `si` 日常运维。详见 [First-run Setup](docs/a7_2_first_run_setup_v01.md)。离线 smoke：`python scripts/run_setup_smoke.py`。

@@ -103,6 +103,8 @@ B2 复用 `apply_elapsed_time()`，依据 State 中四个独立 UTC 字段锚点
 
 ---
 
+B8：共享 Clock + Seed timezone → WorldTimeService → 瞬时时段 → B6 ObservationSnapshot.day_period → 既有环境 Prompt 区块。WorldTimeService 无 Store / 持久游标；未知位置仍可提供时段但不补全地点。Conversation 一轮读取一次 now_utc，B1/B2/B6/B8 共用；成功交流记账只在 assistant Archive 后执行，复用本轮时间、不另取完成墙钟。无新表、自动 Action、NPC schedule 或离线经历。详见 [B8 Lazy World Temporal Context](b8_lazy_world_time_v01.md)。
+
 ## 3. Character State
 
 长期采用单一权威 Character State。
