@@ -12,6 +12,8 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, OptionList, Static
 
 from evolving_companion.manager_services import DeploymentFacade, OperationResult
+from evolving_companion.setup_services import SetupService
+from evolving_companion.setup_app import SetupScreen
 
 PAGES = (
     "Overview",
@@ -73,9 +75,12 @@ class SIManagerApp(App[None]):
     #confirmation Static { height: auto; margin-bottom: 1; }
     """
 
-    def __init__(self, facade: DeploymentFacade) -> None:
+    def __init__(
+        self, facade: DeploymentFacade, *, setup_service: SetupService | None = None
+    ) -> None:
         super().__init__()
         self.facade = facade
+        self.setup_service = setup_service
         self.page = "Overview"
         self.busy = False
         self.backup_names: tuple[str, ...] = ()
@@ -93,6 +98,7 @@ class SIManagerApp(App[None]):
                     yield Button("Restart", id="restart")
                     yield Button("Create Backup", id="backup")
                     yield Button("Restore", id="restore", variant="error")
+                    yield Button("Run Setup / Reconfigure", id="setup")
                 yield Static("", id="result", markup=False)
         yield Footer()
 
@@ -110,6 +116,9 @@ class SIManagerApp(App[None]):
             self.action_refresh_page()
 
     def action_back(self) -> None:
+        if isinstance(self.screen, SetupScreen):
+            self.screen.action_cancel()
+            return
         if not self.busy:
             self.page = "Overview"
             navigation = self.query_one("#navigation", OptionList)
@@ -118,19 +127,25 @@ class SIManagerApp(App[None]):
             self.action_refresh_page()
 
     def action_safe_quit(self) -> None:
+        if isinstance(self.screen, SetupScreen):
+            self.screen.action_cancel()
+            return
         if self.busy:
             self.notify("操作进行中，请等待完成后退出。", severity="warning")
         else:
             self.exit()
 
     def action_refresh_page(self) -> None:
-        if self.busy or isinstance(self.screen, RestoreConfirmation):
+        if self.busy or isinstance(self.screen, (RestoreConfirmation, SetupScreen)):
             return
         for button in self.query("#controls Button"):
             button.display = (
-                self.page == "Service" and button.id in {"start", "stop", "restart"}
-            ) or (
-                self.page == "Backup / Restore" and button.id in {"backup", "restore"}
+                (self.page == "Service" and button.id in {"start", "stop", "restart"})
+                or (
+                    self.page == "Backup / Restore"
+                    and button.id in {"backup", "restore"}
+                )
+                or (self.page in {"Overview", "Configuration"} and button.id == "setup")
             )
         self.query_one("#backups").display = self.page == "Backup / Restore"
         self._perform(self._page_text)
@@ -162,7 +177,8 @@ class SIManagerApp(App[None]):
                     f"{name}: {value}"
                     for name, value in self.facade.configuration().items()
                 )
-                + "\nSecrets 请通过受信任的外部编辑器管理。配置变化需退出 Manager 后重新进入。"
+                + "\n本页只读；Secrets 由 Setup / Reconfigure 安全管理。外部配置变化需退出重进。"
+                + "\nReconfigure 使用同一 First-run Setup flow。"
             )
         if self.page == "Backup / Restore":
             records = self.facade.backups()
@@ -215,7 +231,18 @@ class SIManagerApp(App[None]):
         if self.busy:
             return
         action = event.button.id
-        if action in {"start", "stop", "restart"}:
+        if action == "setup":
+            if self.setup_service is None:
+                self.notify("使用 si setup 进入首次配置。", severity="warning")
+                return
+
+            def setup_finished(saved: bool | None) -> None:
+                if saved and self.setup_service is not None:
+                    self.setup_service.refresh_process_environment()
+                self.action_refresh_page()
+
+            self.push_screen(SetupScreen(self.setup_service), setup_finished)
+        elif action in {"start", "stop", "restart"}:
             operation = {
                 "start": self.facade.service.start,
                 "stop": self.facade.service.stop,

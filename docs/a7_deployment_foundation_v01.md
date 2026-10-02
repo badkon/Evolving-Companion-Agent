@@ -49,6 +49,8 @@ LLM 为 DeepSeek API；Memory 为 SiliconFlow Qwen/Qwen3-Embedding-8B（4096）�
 
 ## 8. Secrets
 
+A7.2 已提供 `si setup` masked 输入与安全 env service，替代首次手工填写的推荐路径；installer 仍不询问 keys、不覆盖配置。已有配置默认 Keep，写前 private backup + atomic replace。详情见 [First-run Setup](a7_2_first_run_setup_v01.md)。
+
 服务器配置 /opt/si/config/si.env，owner si、0600，Git 忽略 si.env；模板仅含空密钥。用编辑器填写 DEEPSEEK_API_KEY、SILICONFLOW_API_KEY 和 QQ routing；无终端交互式密钥输入。
 入口使用已有 python-dotenv，无 shell source；OS/process 同名变量优先，禁用变量插值。systemd EnvironmentFile 不执行 shell expansion，因此模板不使用 ${SILICONFLOW_API_KEY}；deployment loader 将该 key 映射到未显式设置的两个 generic SI_MEMORY_*_API_KEY。显式 generic key 不覆盖。
 server 不读取 app/.env.local；开发 CLI/QQ 默认路径保留原行为。check/health 只输出 CONFIGURED/MISSING 或安全异常类型，不输出文件内容、keys、headers、完整 validation errors。systemd env 文件规则参考 [systemd.exec](https://manpages.debian.org/bookworm/systemd/systemd.exec.5.en.html)。
@@ -70,7 +72,7 @@ Restart=on-failure，RestartSec=5，配置错误退出 78 且 RestartPreventExit
 ```bash
 sudo bash deploy/install.sh <credential-free-repository-url> <reviewed-ref>
 # 首次 check 因空 keys/routing 失败是预期结果；基础安装已完成，不自动启动。
-sudo -u si editor /opt/si/config/si.env
+sudo -u si /opt/si/app/.venv/bin/si setup
 sudo -u si /opt/si/app/.venv/bin/python -m evolving_companion.deploy_check
 sudo systemctl enable si.service
 sudo systemctl start si.service
@@ -79,7 +81,7 @@ journalctl -u si
 journalctl -u si -f
 ```
 
-替换 editor 为实际编辑器。installer 仅首次 clone，已有 checkout 不 pull/reset；已有 env 不覆盖，DB/backups 不删除。它安装 unit/helpers 并 daemon-reload，但不自动 enable/start；运行中的服务需先停。si-service.sh 只是 systemctl/journalctl wrapper，不是 process manager。
+Setup 的可选 Start 仍需 systemd 权限；si 用户无权限时由维护者显式启动，不在 TUI 自动 sudo。installer 仅首次 clone，已有 checkout 不 pull/reset；已有 env 不覆盖，DB/backups 不删除。它安装 unit/helpers 并 daemon-reload，但不自动 enable/start；运行中的服务需先停。si-service.sh 只是 systemctl/journalctl wrapper，不是 process manager。
 
 ## 12. Deploy Check
 
@@ -136,4 +138,4 @@ Windows tests 只覆盖 Python/helpers、assets 静态契约和 mocks，不代�
 
 ## 21. SI Manager / Next Steps
 
-A7.1 已增加 `si` Textual TUI，复用 check_deployment、backup_database、restore_database 和 systemd，管理已部署实例的状态/启停/日志/备份/恢复；配置只读，无自动更新或安装器替代。把 `/opt/si/app/.venv/bin` 加入 SSH 用户 PATH 后运行 `si`。详细权限、离线语义及限制见 [SI Manager TUI](a7_1_si_manager_tui_v01.md)。下一步 A7.2 First-run Setup / A7.3 Developer Console 尚未实现。
+A7.1 已增加 `si` Textual TUI，复用 A7 helpers/systemd 管理已部署实例；A7.2 增加 `si setup` 并在 Manager 中共享 Reconfigure flow。把 `/opt/si/app/.venv/bin` 加入 SSH 用户 PATH，安装后先 `si setup`，之后 `si`。无自动更新或安装器替代；A7.3 Developer Console 尚未实现。见 [SI Manager](a7_1_si_manager_tui_v01.md) 和 [Setup](a7_2_first_run_setup_v01.md)。

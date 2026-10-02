@@ -9,6 +9,7 @@
 .env.local
 .env.*.local
 si.env
+si.env.bak.*
 
 # --- Character runtime data ---
 # Memories, personality states, relationship states,

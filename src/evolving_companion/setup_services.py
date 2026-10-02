@@ -1,0 +1,279 @@
+"""UI-independent first-run configuration; check saved files in an isolated process."""
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+import logging
+import os
+from pathlib import Path
+import subprocess
+import sys
+from urllib.parse import urlsplit
+
+from evolving_companion.character_data import load_character_seed_data
+from evolving_companion.deployment import DeploymentPaths
+from evolving_companion.deployment_env import (
+    DeploymentEnvService,
+    EnvEditError,
+    SECRET_FIELDS,
+)
+from evolving_companion.manager_services import OperationResult, ServiceManager, redact
+from evolving_companion.qq_adapter import _identifier
+
+
+@dataclass(frozen=True)
+class SetupDetection:
+    status: str
+    character: str
+    internal_identity: str
+    message: str
+
+
+@dataclass(frozen=True)
+class SetupResult:
+    saved: bool
+    ready: bool
+    message: str
+
+
+class SetupService:
+    def __init__(
+        self,
+        env_file: Path,
+        service: ServiceManager,
+        environment: Mapping[str, str] | None = None,
+    ) -> None:
+        # Capture explicit OS variables BEFORE entry loads any env file.
+        self.environment = dict(os.environ if environment is None else environment)
+        self.service = service
+        root = Path(self.environment.get("SI_DEPLOY_ROOT", "/opt/si")).resolve()
+        self.env = DeploymentEnvService(env_file, root / "app/deploy/si.env.example")
+        self._original = self.env._text()
+        self._existing = self.env.read()
+        self._defaults = self.env.defaults()
+        effective = self._defaults | self._existing | self.environment
+        root = Path(effective.get("SI_DEPLOY_ROOT", str(root))).resolve()
+        self.paths = DeploymentPaths(
+            root,
+            root / "app",
+            env_file,
+            Path(
+                effective.get("SI_RUNTIME_DB", str(root / "runtime/si_001.db"))
+            ).resolve(),
+            root / "backups",
+        )
+        self.last_result = SetupResult(False, False, "Not saved.")
+
+    def effective(self, values: Mapping[str, str] | None = None) -> dict[str, str]:
+        result = self._defaults | self._existing | dict(values or {}) | self.environment
+        for name in ("SI_MEMORY_EMBEDDING_API_KEY", "SI_MEMORY_RERANKER_API_KEY"):
+            if name not in result:
+                result[name] = result.get("SILICONFLOW_API_KEY", "")
+        return result
+
+    def detect(self) -> SetupDetection:
+        status = self.env.get_status()
+        if status == "Configured" and not self.run_checks().ok:
+            status = "Incomplete"
+        seed = load_character_seed_data(self.paths.app / "data/characters/si_001.yaml")
+        message = (
+            "Existing deployment configuration detected."
+            if status == "Configured"
+            else f"Deployment configuration: {status}."
+        )
+        return SetupDetection(
+            status,
+            f"{seed.identity.working_name} / {seed.identity.development_id}",
+            str(seed.identity.internal_id)[:8] + "…",
+            message + " Existing Character Identity will be preserved.",
+        )
+
+    def form_defaults(self) -> dict[str, str]:
+        values = self._defaults | self._existing
+        names = (
+            "SI_MEMORY_EMBEDDING_MODEL",
+            "SI_MEMORY_RERANKER_MODEL",
+            "SI_ONEBOT_WS_URL",
+            "SI_QQ_BOT_USER_ID",
+            "SI_QQ_ALLOWED_USER_IDS",
+        )
+        safe = {name: values.get(name, "") for name in names}
+        safe["SI_CHAT_TRANSPORT"] = self._existing.get("SI_CHAT_TRANSPORT", "none")
+        return {name: redact(value, self.effective()) for name, value in safe.items()}
+
+    def secret_status(self) -> dict[str, str]:
+        return {
+            name: "Configured" if self._existing.get(name, "").strip() else "Missing"
+            for name in SECRET_FIELDS
+        }
+
+    def validate(self, values: Mapping[str, str]) -> None:
+        candidate = self._defaults | self._existing | dict(values)
+        if any(not candidate.get(key, "").strip() for key in SECRET_FIELDS[:2]):
+            raise EnvEditError("DeepSeek and SiliconFlow keys are required.")
+        if (
+            candidate.get("SI_MEMORY_EMBEDDING_PROVIDER") != "api"
+            or candidate.get("SI_MEMORY_RERANKER_PROVIDER") != "api"
+        ):
+            raise EnvEditError("Server setup supports API / API only.")
+        if (
+            not candidate.get("SI_MEMORY_EMBEDDING_MODEL", "").strip()
+            or not candidate.get("SI_MEMORY_RERANKER_MODEL", "").strip()
+        ):
+            raise EnvEditError("Memory model names are required.")
+        transport = candidate.get("SI_CHAT_TRANSPORT")
+        if transport not in {"qq", "none"}:
+            raise EnvEditError("Select QQ or None.")
+        if transport == "qq":
+            try:
+                _identifier(candidate.get("SI_QQ_BOT_USER_ID", ""), user=True)
+                allowed = [
+                    part.strip()
+                    for part in candidate.get("SI_QQ_ALLOWED_USER_IDS", "").split(",")
+                    if part.strip()
+                ]
+                if not allowed:
+                    raise ValueError
+                for identifier in allowed:
+                    _identifier(identifier, user=True)
+                endpoint = urlsplit(candidate.get("SI_ONEBOT_WS_URL", ""))
+                if (
+                    endpoint.scheme not in {"ws", "wss"}
+                    or not endpoint.hostname
+                    or endpoint.username
+                    or endpoint.password
+                    or endpoint.query
+                    or endpoint.fragment
+                ):
+                    raise ValueError
+                _ = endpoint.port
+            except ValueError:
+                raise EnvEditError(
+                    "Invalid QQ identifiers/allowlist or WebSocket URL."
+                ) from None
+
+    def review(self, values: Mapping[str, str]) -> dict[str, str]:
+        candidate = self._defaults | self._existing | dict(values)
+        result = {
+            "LLM": "DeepSeek API",
+            "Embedding": "SiliconFlow API / "
+            + candidate.get("SI_MEMORY_EMBEDDING_MODEL", ""),
+            "Reranker": "SiliconFlow API / "
+            + candidate.get("SI_MEMORY_RERANKER_MODEL", ""),
+            "Transport": candidate.get("SI_CHAT_TRANSPORT", "none"),
+            "Runtime DB": str(self.paths.database),
+        }
+        result.update(
+            {
+                name: "Configured" if candidate.get(name, "").strip() else "Missing"
+                for name in SECRET_FIELDS
+            }
+        )
+        return {name: redact(value, candidate) for name, value in result.items()}
+
+    def run_checks(self) -> OperationResult:
+        try:
+            # Fresh environment avoids stale file-derived keys in a long-running Manager.
+            # Credentials are passed only via env, never argv or command output.
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "evolving_companion.deploy_check",
+                    "--env-file",
+                    str(self.env.path),
+                ],
+                env=self.environment,
+                capture_output=True,
+                text=True,
+                timeout=45,
+                stdin=subprocess.DEVNULL,
+                check=False,
+            )
+            return OperationResult(
+                result.returncode == 0,
+                redact(result.stdout, self.effective()).strip()
+                or "Deployment check failed; check local files/permissions.",
+                result.returncode,
+            )
+        except Exception as error:
+            logging.getLogger(__name__).warning(
+                "Setup check failed (%s)", type(error).__name__
+            )
+            return OperationResult(
+                False, "Deployment check unavailable; configuration remains saved."
+            )
+
+    def save(self, values: Mapping[str, str]) -> SetupResult:
+        try:
+            self.validate(values)
+            backup = self.env.update(values, expected=self._original)
+            self._existing = self.env.read()
+            self._original = self.env._text()
+        except Exception as error:
+            logging.getLogger(__name__).warning(
+                "Setup save failed (%s)", type(error).__name__
+            )
+            self.last_result = SetupResult(
+                False,
+                False,
+                "Configuration save failed; check fields, permissions or concurrent edits.",
+            )
+            return self.last_result
+        check = self.run_checks()
+        no_transport = self._existing.get("SI_CHAT_TRANSPORT") == "none"
+        message = "Configuration saved successfully." + (
+            " Existing configuration backed up." if backup else ""
+        )
+        if no_transport:
+            message += "\nService cannot start until a transport is configured."
+        if any(key in self.environment for key in values):
+            message += "\nExplicit OS/environment overrides remain in effect."
+        self.last_result = SetupResult(
+            True,
+            check.ok and not no_transport,
+            message
+            + "\n"
+            + check.message
+            + "\nConnectivity tests are not part of setup v0.1.",
+        )
+        return self.last_result
+
+    def start(self, *, confirmed: bool = False) -> OperationResult:
+        if not confirmed or not self.last_result.saved or not self.last_result.ready:
+            return OperationResult(
+                False, "Save configuration and pass deploy_check before optional start."
+            )
+        if not self.run_checks().ok:
+            return OperationResult(
+                False,
+                "Configuration saved successfully. Service start blocked: deploy_check failed.",
+            )
+        try:
+            result = self.service.start()
+            return OperationResult(
+                result.ok,
+                "Configuration saved successfully.\n"
+                + (
+                    "Service started."
+                    if result.ok
+                    else "Service start failed. "
+                    + redact(result.message, self.effective())
+                ),
+                result.exit_code,
+            )
+        except Exception:
+            return OperationResult(
+                False,
+                "Configuration saved successfully. Service start failed; sudo/systemd permission required.",
+            )
+
+    def refresh_process_environment(self) -> None:
+        # Manager only: apply saved file to process, retaining original explicit overrides.
+        effective = self.effective()
+        for name in (
+            self._existing.keys()
+            | self._defaults.keys()
+            | {"SI_MEMORY_EMBEDDING_API_KEY", "SI_MEMORY_RERANKER_API_KEY"}
+        ):
+            if name not in self.environment and name in effective:
+                os.environ[name] = effective[name]

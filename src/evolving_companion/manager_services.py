@@ -157,6 +157,7 @@ class Overview:
     memory_profile: str
     transport: str
     app_version: str
+    setup_status: str = "Setup Required"
 
 
 @dataclass(frozen=True)
@@ -214,6 +215,7 @@ class DeploymentFacade:
     def overview(self) -> Overview:
         seed = load_character_seed_data(self.paths.app / "data/characters/si_001.yaml")
         config = self.configuration()
+        deployment_status = check_summary(self.checks())
         return Overview(
             redact(
                 f"{seed.identity.working_name} / {seed.identity.development_id}",
@@ -222,11 +224,14 @@ class DeploymentFacade:
             str(seed.identity.internal_id)[:8] + "…",
             self.service.status().state,
             "Available" if self.paths.database.is_file() else "Missing",
-            check_summary(self.checks()),
+            deployment_status,
             check_summary(self.checks(health=True)),
             f"{config['Embedding provider'].upper()} / {config['Reranker provider'].upper()}",
             config["Transport"],
             version("evolving-companion-agent"),
+            "Ready"
+            if self.paths.env_file.is_file() and deployment_status == "OK"
+            else "Setup Required",
         )
 
     def backups(self) -> tuple[BackupInfo, ...]:

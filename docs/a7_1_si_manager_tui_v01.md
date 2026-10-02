@@ -32,6 +32,8 @@ si
 
 ## 5. Overview
 
+A7.2 后增加 Setup Required / Ready 与 Run Setup 入口；Configuration 的 Reconfigure 共用同一 SetupScreen，不复制 UI。Setup 保存后更新 file-derived 环境，显式 OS overrides 保持；不会自动重启 Core。
+
 显示工作名/开发代号、短 UUID、Running/Stopped/Failed/Unknown、DB Available/Missing、check/health OK/Error、Memory Profile、transport、已有 app version。全部本地，不读取 Memory 内容或初始化 DB。
 方向键/Enter 选择菜单，Tab/Shift+Tab 移动按钮/备份列表；`r` 刷新、`Esc` 返回 Overview、`q`/Exit 退出。执行中禁止重复操作及退出，避免中断 SQLite backup/restore。
 
@@ -48,6 +50,8 @@ si
 复用 A7 health 参数并要求 DB 存在。Health OK 不表示 DeepSeek、SiliconFlow、QQ 或其他 transport 在线，无 connectivity test。
 
 ## 9. Config
+
+A7.2 通过独立 [First-run Setup](a7_2_first_run_setup_v01.md) 安全编辑白名单字段/凭据；本页仍只读，不提供任意 env editor。
 
 只读白名单：provider/model、runtime DB、transport、secret 文件位置。Key 仅 Configured/Missing，不把整个 environment/env 文件放进 UI model；展示文本过滤已知 secret 和控制字符。编辑延后，不写坏未知字段/secret。外部配置修改后需退出重进；刷新不重新加载文件，仍保留 OS > env-file 优先级。
 
@@ -75,9 +79,9 @@ Restore 选现有备份后弹出确认，默认焦点 Cancel，Esc/q 取消。�
 配置只读、日志不 follow；无 Update Now、Git pull、rollback、installer replacement，仅显示 app version，不自动读 Git revision。Windows headless 测试不证明真实 Linux systemd/polkit/SSH 实测。
 离线 smoke：`python scripts/run_si_manager_smoke.py`，fake Running → Service → Health → Overview → q，不访问真实 DB/secrets/systemd/network。
 
-## 15. Future First-run Setup
+## 15. First-run Setup
 
-A7.1 为 ongoing operations。A7.2 独立研究 secrets setup、provider/transport 选择、initial validation、first start；本阶段未实现。
+A7.1 为 ongoing operations。A7.2 已实现 `si setup` 的 masked secrets、API-only profile、QQ/None、Review、atomic save、离线 validation 和可选 first start；见 [A7.2 文档](a7_2_first_run_setup_v01.md)。Core、World、Memory 不由 Setup 初始化/重置。
 
 ## 16. Future Developer Console
 

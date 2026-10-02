@@ -6,7 +6,7 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — A7.1 SI Manager TUI v0.1
+## 当前工程状态 — A7.2 First-run Setup v0.1
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
@@ -20,6 +20,8 @@ A6.0：Memory → EmbeddingProvider → Semantic Retrieval → RerankerProvider 
 当前 A4 v0.1 已增加本地 SQLite 当前 Character State，使用 `identity.internal_id` UUID 作为 State 主键；A4.1 添加确定性 elapsed-time transition；A4.2 添加不持久化的显式 Character Event 及其 State Transition 映射。B1 增加统一可注入 UTC Clock，SQLite `character_runtime` 保存最后成功对话时间，Time Snapshot 转换到 Seed 指定的 Character timezone，并向 Prompt 投影本地日期、时间与离线时长。Conversation 的 State elapsed 与 Prompt 共用本轮快照时间。Archive / Memory 等历史存储时间戳仍由 storage 内部系统时钟写入，是当前保留的边界。详见 [A4 Character State / A4.1 State Transition](a4_character_state_v01.md)、[A4.2 Explicit Character Events](a4_2_character_events_v01.md) 与 [B1 Time Model](b1_time_model_v01.md)。当前没有 memory merge/summary；也没有 World/NPC 模拟或自主行为。完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
 
 ## 1. 核心分层
+
+A7.2 `si setup` / Manager Reconfigure 共用 SetupScreen → SetupService → DeploymentEnvService 与 A7 deploy_check、A7.1 SystemdServiceManager。只写白名单部署配置，masked key 默认保留、private backup/atomic replace、未知字段保留，路径/identity 只读；无 Character reset、DB schema/运行逻辑改变。离线检查在新本地进程复用现有入口，避开旧 file-derived 环境。Transport None 可以保存但不启动服务。详见 [A7.2 Setup](a7_2_first_run_setup_v01.md)。
 
 A7.1 仅增加 Deployment/Operations UI：`si` → Textual SIManagerApp → DeploymentFacade / SystemdServiceManager → A7 helpers / systemd。配置只读白名单，secret 仅配置状态；恢复须确认并复用 A7 stopped/UUID/pre_restore 保护。阻塞操作经 worker thread，全部离线，不进入 Character Core、Prompt、Memory 或 transport 链。详见 [A7.1 SI Manager](a7_1_si_manager_tui_v01.md)。
 
