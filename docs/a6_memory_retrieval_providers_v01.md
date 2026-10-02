@@ -85,4 +85,30 @@ CLI 和 QQ 入口先按既有规则加载 `.env.local`（OS environment 优先�
 
 API embedding / reranker failure 仍沿既有 recall 边界中断主 Conversation；user Archive 已保留，主回复不执行。未擅自改成 best-effort。post-response formation/consolidation 仍沿既有独立容错边界。
 分数仅用于同一候选集排序，不是概率、跨 provider 可比指标或全局相关性门槛。既有 `normalized_score` 保留 sigmoid 诊断兼容，不能解释为概率，排序只看 `raw_score`。
-Fake 测试不证明真实厂商兼容性、语义质量或网络 SLA；真实厂商尚未验证。本版没有 threshold tuning、新 Memory 算法、去重、Memory v2、fallback 或部署框架。
+Fake 测试不证明真实厂商兼容性、语义质量或网络 SLA；A6.0 阶段仅验证 Fake，A6.1 的 SiliconFlow 有限真实验证见下一节，其他 API 厂商仍未验证。本版没有 threshold tuning、新 Memory 算法、去重、Memory v2、fallback 或部署框架。
+
+## 10. A6.1 — SiliconFlow Qwen3 Benchmark
+
+新增人工实验入口，直接复用 A6 `APIEmbeddingProvider` / `APIRerankerProvider`，无重复厂商 class，无生产 wiring/default 修改。
+固定 endpoint 为 `https://api.siliconflow.cn/v1/embeddings` 与 `/rerank`，使用 `Qwen/Qwen3-Embedding-8B` / `Qwen/Qwen3-Reranker-8B`。
+HTTP 格式参考 [SiliconFlow 官方 OpenAPI](https://github.com/siliconflow/siliconcloud/blob/main/openapi.yaml) 与 [rerank reference](https://siliconflow.readme.io/reference/creatererank)；模型与 4096 维原生配置参考 [Qwen 官方 model card](https://huggingface.co/Qwen/Qwen3-Embedding-8B)。这些资料不替代本账户真实 API 可用性检查。
+
+在已有 Git 忽略的 `.env.local` 添加 `SILICONFLOW_API_KEY`；`.env.example` 只增加空变量。进程环境变量优先，无交互式密钥输入，缺失时退出并明确提示；不要求 DeepSeek key。本实验会发送既有合成 fixture 文本，不读取真实 Character Memory/Archive。
+
+```bash
+python scripts/run_siliconflow_provider_smoke.py
+python scripts/run_siliconflow_retrieval_benchmark.py
+# 仅在已安装 local-memory 时显式运行本地 CPU baseline
+python scripts/run_siliconflow_retrieval_benchmark.py --with-local-baseline
+```
+
+`--dimension` 为明确的期望 response dimension（默认 4096）；不会发送降维请求，也不会截断向量。每条 API response 由 A6 校验实际形状，smoke 打印实测 shape / dtype；不匹配则 fail-fast。`--timeout` 默认 30 秒，零自动重试。
+原有 `memory_retrieval_cases.json` 完全不变：36 条 memories、18 条 queries（16 条有 expected、2 条 no-related），危险干扰项标签保留。raw query，无额外 instruction；不修改 Need/Context policy，但与已有 retrieval benchmark 一样直接逐条检索，不对 fixture 加生产 Need Gate。
+临时 SQLite 运行生产 Retriever / Reranker，semantic Top-10 → rerank → Top-3；Top-5 指标仅评估候选排序，不将 injection 数量改为 5。
+
+结果默认写入 Git 忽略的 `runtime/benchmarks/a6_1_<UTC timestamp>.json` 和 `.md`；可用 `--output-dir` 指定位置。输出保存 per-query Top-10、Top-3、expected IDs、cosine 与 raw score；no-related query 单独记录，不计入 Recall/MRR 分母。MRR 在 Top-10 边界内计算；Recall 为每 query 召回 expected IDs 比例的 macro average，不是 hit rate。
+JSON 保存 fixture SHA256、safe request status、latency、usage。HTTP latency 包含连接与完整响应读取，不包含随后 NumPy parsing；local encode/score latency 包含首次懒加载，统计中的 local request count 表示 encode/score 调用而非网络请求。这些单次计时不能解释为稳态 SLA。
+HTTP error / 429 rate limit / 5xx server error / timeout / malformed response 分别记录。某 profile 单次失败即停止该 profile，不重试；不完整 profile 的指标为 null，不用部分成功数据虚构总体分数。临时数据库正常退出即清理，不写 `runtime/si_001.db`。
+
+只有显式指定 `--embedding-price-per-million` / `--reranker-price-per-million`（每百万 input tokens 单价）时才估算费用，可同时指定 `--currency CNY` 等标签；必须每个请求都返回 input usage，否则估算为 null。单价不进入核心 provider，未返回 usage 不按 0 补齐。默认不假设币种或价格。
+报告 Decision 默认为 `INCONCLUSIVE`，不自动宣告 winner。人工评估结果与限制见 [A6.1 Benchmark Evidence](benchmarks/a6_1_siliconflow_qwen3_retrieval.md)。生产 local/local 默认继续保留，是否切换等待人工确认。
