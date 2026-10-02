@@ -16,6 +16,7 @@ from evolving_companion.memory_formation import (
     MemoryFormationResult,
 )
 from evolving_companion.memory_recall import MemoryRecallPort
+from evolving_companion.observation import ObservationContextPort
 from evolving_companion.prompting import (
     MemoryPromptCandidate,
     Message,
@@ -49,6 +50,7 @@ class Conversation:
         character_timezone: str | None = None,
         clock: Clock | None = None,
         character_life_service: CharacterLifeService | None = None,
+        observation_service: ObservationContextPort | None = None,
     ) -> None:
         if character_state_service is not None and character_id is None:
             raise ValueError(
@@ -56,11 +58,14 @@ class Conversation:
             )
         if character_life_service is not None and character_id is None:
             raise ValueError("character_life_service requires identity.internal_id")
+        if observation_service is not None and character_id is None:
+            raise ValueError("observation_service requires identity.internal_id")
         if (
             character_id is not None
             and character_state_service is None
             and character_timezone is None
             and character_life_service is None
+            and observation_service is None
         ):
             raise ValueError(
                 "character_id requires State or Character Time configuration"
@@ -75,6 +80,7 @@ class Conversation:
         self._memory_formation_service = memory_formation_service
         self._character_state_service = character_state_service
         self._character_life_service = character_life_service
+        self._observation_service = observation_service
         self._state_transition_service = (
             CharacterStateTransitionService(character_state_service, self._clock)
             if character_state_service is not None
@@ -91,6 +97,7 @@ class Conversation:
         self._last_memory_formation_result: MemoryFormationResult | None = None
         self._last_interaction_error: str | None = None
         self._last_memory_recall_error: str | None = None
+        self._last_observation_error: str | None = None
         self.conversation_id = str(uuid4())
         self._history: list[Message] = []
 
@@ -114,8 +121,14 @@ class Conversation:
         """Developer-only exception type for this turn; never prompt content."""
         return self._last_memory_recall_error
 
+    @property
+    def last_observation_error(self) -> str | None:
+        """Developer-only exception type; no cached observation or failure text."""
+        return self._last_observation_error
+
     def send(self, user_message: str) -> str:
         self._last_memory_recall_error = None
+        self._last_observation_error = None
         user_archive_id = self._archive_store.append_archive_message(
             self.conversation_id, "user", user_message
         )
@@ -133,7 +146,21 @@ class Conversation:
             else None
         )
         life_context = None
-        if self._character_life_service is not None:
+        observation = None
+        if self._observation_service is not None:
+            assert self._character_id is not None
+            try:
+                life_context, observation = self._observation_service.capture_context(
+                    self._character_id, now_utc
+                )
+            except Exception as error:
+                # Drop both contexts; do not mix separate location versions or reuse
+                # an old snapshot. No exception text/traceback enters logs or Prompt.
+                self._last_observation_error = type(error).__name__
+                logging.getLogger(__name__).warning(
+                    "observation_failed: %s", self._last_observation_error
+                )
+        elif self._character_life_service is not None:
             assert self._character_id is not None
             life_context = self._character_life_service.project_context(
                 self._character_id, WorldEntityService(self._archive_store, self._clock)
@@ -159,6 +186,7 @@ class Conversation:
             character_state,
             time_snapshot,
             life_context,
+            observation,
         )
         reply = self._llm_client.complete(messages)
         assistant_archive_id = self._archive_store.append_archive_message(

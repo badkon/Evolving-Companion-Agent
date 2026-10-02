@@ -41,6 +41,7 @@ from evolving_companion.memory_reranker import MemoryReranker
 from evolving_companion.memory_retrieval import MemoryRetriever
 from evolving_companion.memory_provider_config import create_memory_providers
 from evolving_companion.storage import SQLiteStore
+from evolving_companion.observation import ObservationService
 from evolving_companion.clock import SystemClock
 from evolving_companion.time_model import CharacterTimeService, format_offline_duration
 from evolving_companion.world import WorldEntityService, load_world_seed
@@ -77,6 +78,7 @@ def _run(resources: ExitStack) -> None:
         life_service = CharacterLifeService(
             store, seed_data.identity.internal_id, seed_data.initial_life_context, clock
         )
+        life_service.get_life_context(seed_data.identity.internal_id)
         transition_service = CharacterStateTransitionService(state_service, clock)
         event_service = CharacterEventService(
             seed_data.identity.internal_id, state_service, transition_service, clock
@@ -107,6 +109,7 @@ def _run(resources: ExitStack) -> None:
             character_timezone=seed_data.timezone,
             clock=clock,
             character_life_service=life_service,
+            observation_service=ObservationService(store, clock),
         )
     except ValueError as error:
         print(error)

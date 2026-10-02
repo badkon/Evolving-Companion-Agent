@@ -12,7 +12,8 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from evolving_companion.character_state import CharacterState, TEMPORAL_ANCHORS
-from evolving_companion.character_life import CharacterLifeContext
+from evolving_companion.character_life import CharacterLifeContext, ProjectedLifeContext
+from evolving_companion.observation import MAX_VISIBLE_NPCS, ObservationSnapshot
 from evolving_companion.world import WorldEntity
 from evolving_companion.npc import NPCRecord
 
@@ -409,6 +410,73 @@ class SQLiteStore:
         if not values.pop("world_references_migrated"):
             raise ValueError("Initialize World seed before reading legacy Life Context")
         return CharacterLifeContext.model_validate(values)
+
+    def capture_observation_context(
+        self, character_id: UUID, observed_at: datetime
+    ) -> tuple[ProjectedLifeContext | None, ObservationSnapshot]:
+        """One read snapshot for Life names, current Place and bounded NPC refs."""
+        unknown = ObservationSnapshot(
+            character_id=character_id, observed_at=observed_at
+        )
+        with closing(self._connect()) as connection, connection:
+            connection.execute("PRAGMA query_only = ON")
+            connection.execute("BEGIN")
+            row = connection.execute(
+                """SELECT character_id, life_stage, home_entity_id, school_entity_id,
+                   primary_area_entity_id, current_location_entity_id, current_role,
+                   updated_at, world_references_migrated
+                   FROM character_life_context WHERE character_id = ?""",
+                (str(character_id),),
+            ).fetchone()
+            if row is None:
+                return None, unknown  # Never bootstrap Life from an observation.
+            values = dict(row)
+            if not values.pop("world_references_migrated"):
+                raise ValueError(
+                    "Initialize World seed before reading legacy Life Context"
+                )
+            life = CharacterLifeContext.model_validate(values)
+
+            def name(entity_id: UUID | None) -> str | None:
+                if entity_id is None:
+                    return None
+                place = connection.execute(
+                    "SELECT canonical_name FROM world_entities "
+                    "WHERE entity_id = ? AND entity_type = 'place'",
+                    (str(entity_id),),
+                ).fetchone()
+                if place is None:
+                    raise ValueError("Life reference must point to an existing Place")
+                return place[0]
+
+            projected = ProjectedLifeContext(
+                life.life_stage,
+                life.current_role,
+                name(life.home_entity_id),
+                name(life.school_entity_id),
+                name(life.primary_area_entity_id),
+                name(life.current_location_entity_id),
+            )
+            if life.current_location_entity_id is None:
+                return projected, unknown  # No global NPC query.
+            rows = connection.execute(
+                "SELECT npc_id FROM world_npcs "
+                "WHERE place_entity_id = ? AND active = 1 "
+                "ORDER BY npc_id LIMIT ?",
+                (str(life.current_location_entity_id), MAX_VISIBLE_NPCS + 1),
+            ).fetchall()
+            snapshot = ObservationSnapshot(
+                character_id=character_id,
+                observed_at=observed_at,
+                location_entity_id=life.current_location_entity_id,
+                place_name=projected.current_location_reference,
+                visible_npc_ids=tuple(
+                    UUID(item[0]) for item in rows[:MAX_VISIBLE_NPCS]
+                ),
+                truncated=len(rows) > MAX_VISIBLE_NPCS,
+                status="available",
+            )
+            return projected, snapshot
 
     def upsert_character_life_context(self, context: CharacterLifeContext) -> None:
         with closing(self._connect()) as connection, connection:

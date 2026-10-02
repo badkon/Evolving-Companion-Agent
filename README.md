@@ -26,7 +26,9 @@ B3 增加独立持久化的 Personal Life Context，按 Internal UUID 绑定。�
 
 B4 建立最小静态 World Place 层，固定 UUID seed 初始化到 SQLite；Life 的地点关联改为 World UUID，并兼容迁移 B3 旧字符串。Prompt 只解析相关地点名称，不自动获得 World description 或亲历记忆。详见 [B4 World State](docs/b4_world_state_v01.md)。未实现动态世界模拟。
 
-B5 增加 [Lightweight NPC Registry](docs/b5_lightweight_npc_registry_v01.md)：独立 SQLite 静态记录、稳定 UUID、显式 Place 关联和 active 标记。正式 NPC 初始为 0；只有 SI-001 是完整 Character，NPC 无 LLM、Memory、后台任务或自动 Prompt 注入。离线检查：`python scripts/run_npc_registry_smoke.py`。
+B5 增加 [Lightweight NPC Registry](docs/b5_lightweight_npc_registry_v01.md)：独立 SQLite 静态记录、稳定 UUID、显式 Place 关联和 active 标记。正式 NPC 初始为 0；只有 SI-001 是完整 Character，NPC 无 LLM、Memory、后台任务，资料不直接进入 Prompt。离线检查：`python scripts/run_npc_registry_smoke.py`。
+
+B6 增加 [Observation Layer](docs/b6_observation_layer_v01.md)：CLI / QQ 每轮在同一只读事务中捕获 Life 与当前 Place 的 active NPC 引用，独立 Prompt 区块仅提供地点和匿名人物存在信息。最多 20 条、无缓存/持久化；未知位置不猜测，查询失败省略本轮组合上下文。Observation ≠ Knowledge ≠ Experience ≠ Memory；无识别、Action 或 Scheduler。离线检查：`python scripts/run_observation_smoke.py`，仅使用临时 DB 和 synthetic NPC。
 
 ## 开发环境
 

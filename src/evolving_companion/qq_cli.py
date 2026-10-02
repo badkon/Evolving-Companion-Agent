@@ -27,6 +27,7 @@ from evolving_companion.memory_provider_config import create_memory_providers
 from evolving_companion.qq_adapter import QQPrivateChatAdapter, _identifier
 from evolving_companion.qq_transport import OneBotWebSocketTransport
 from evolving_companion.storage import SQLiteStore
+from evolving_companion.observation import ObservationService
 from evolving_companion.world import WorldEntityService, load_world_seed
 
 
@@ -41,6 +42,10 @@ def create_conversation(resources: ExitStack) -> Conversation:
         load_world_seed(root / "data/worlds/si_world.yaml")
     ):
         logging.getLogger(__name__).warning("World migration: %s", diagnostic)
+    life_service = CharacterLifeService(
+        store, seed.identity.internal_id, seed.initial_life_context, clock
+    )
+    life_service.get_life_context(seed.identity.internal_id)
     embedding_provider, reranker_provider = create_memory_providers(resources)
     retriever = MemoryRetriever(store, embedding_provider)
     llm = LLMClient()
@@ -60,9 +65,8 @@ def create_conversation(resources: ExitStack) -> Conversation:
         character_id=seed.identity.internal_id,
         character_timezone=seed.timezone,
         clock=clock,
-        character_life_service=CharacterLifeService(
-            store, seed.identity.internal_id, seed.initial_life_context, clock
-        ),
+        character_life_service=life_service,
+        observation_service=ObservationService(store, clock),
     )
 
 
