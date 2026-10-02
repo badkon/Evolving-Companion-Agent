@@ -6,7 +6,7 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — A7 Deployment Foundation v0.1
+## 当前工程状态 — A7.1 SI Manager TUI v0.1
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
@@ -21,7 +21,9 @@ A6.0：Memory → EmbeddingProvider → Semantic Retrieval → RerankerProvider 
 
 ## 1. 核心分层
 
-A7 Deployment Layer 与 Character Core 分开：server entry 按 SI_CHAT_TRANSPORT 选择已有 QQ 入口，使用外部 `/opt/si/config/si.env` 和 `SI_RUNTIME_DB=/opt/si/runtime/si_001.db`，不读取开发 `.env.local`。SQLiteStore 的显式 path 优先；未配置时保持开发默认。systemd 以 si 用户运行，uv.lock 锁定 API-only 环境；离线检查不初始化 seed/runtime，不生成 UUID。备份/恢复使用 sqlite3 backup，恢复前要求停止服务并保护当前 DB。config/runtime/backups 不随 checkout 更新，Device Migration ≠ Character Reset。完整配置、复用评估、安全与验证限制见 [A7 Deployment Foundation](a7_deployment_foundation_v01.md)。未实现 Manager TUI、自动更新或新 Transport 框架。
+A7.1 仅增加 Deployment/Operations UI：`si` → Textual SIManagerApp → DeploymentFacade / SystemdServiceManager → A7 helpers / systemd。配置只读白名单，secret 仅配置状态；恢复须确认并复用 A7 stopped/UUID/pre_restore 保护。阻塞操作经 worker thread，全部离线，不进入 Character Core、Prompt、Memory 或 transport 链。详见 [A7.1 SI Manager](a7_1_si_manager_tui_v01.md)。
+
+A7 Deployment Layer 与 Character Core 分开：server entry 按 SI_CHAT_TRANSPORT 选择已有 QQ 入口，使用外部 `/opt/si/config/si.env` 和 `SI_RUNTIME_DB=/opt/si/runtime/si_001.db`，不读取开发 `.env.local`。SQLiteStore 的显式 path 优先；未配置时保持开发默认。systemd 以 si 用户运行，uv.lock 锁定 API-only 环境；离线检查不初始化 seed/runtime，不生成 UUID。备份/恢复使用 sqlite3 backup，恢复前要求停止服务并保护当前 DB。config/runtime/backups 不随 checkout 更新，Device Migration ≠ Character Reset。完整配置、复用评估、安全与验证限制见 [A7 Deployment Foundation](a7_deployment_foundation_v01.md)。A7.1 Manager 在独立运维层；未实现自动更新或新 Transport 框架。
 
 Conversation 的主回复完成边界为 user Archive、LLM 回复和 assistant Archive 均成功。assistant Archive 后先更新 in-memory history，再独立 best-effort 写入 last interaction、执行 Memory Formation / Consolidation；这些派生操作失败不影响已归档主回复。时间写入失败仅保留异常类型诊断 `last_interaction_error`，数据库锚点允许暂时滞后，不写虚假 fallback 时间。LLM 或 assistant Archive 失败仍中断本轮，不追加 completed history、不更新时间、不执行 formation。
 

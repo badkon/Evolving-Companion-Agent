@@ -134,6 +134,6 @@ systemd 是唯一进程管理器；没有 arbitrary shell API、公开 admin、r
 Windows tests 只覆盖 Python/helpers、assets 静态契约和 mocks，不代表 systemd sandbox、权限、真实发行版安装或网络可用性已实测。当前机器没有 bash，bash -n 未执行；上线前在目标 Linux 上执行四个 deploy/*.sh 的 bash -n 和 systemd-analyze verify deploy/systemd/si.service。
 依赖锁记录 ML extra 的可选 metadata，但 server 不安装；没有 backup rotation/cron、自动更新、自动恢复、监控或 HA。恢复状态检查存在 TOCTOU：管理员必须保持服务停止并阻止并发 writer/start。首次缺 config 时 check 会失败，填配置后重跑。不能将健康输出当成真实对话能力证明。
 
-## 21. Future SI Manager
+## 21. SI Manager / Next Steps
 
-后续 A7.1 可直接调用 check_deployment、backup_database、restore_database 等 Python API，以及既有 systemd 命令来管理 update/service/logs/config/backup/restore。本轮不实现 TUI、si 命令、Web Setup 或额外服务层。
+A7.1 已增加 `si` Textual TUI，复用 check_deployment、backup_database、restore_database 和 systemd，管理已部署实例的状态/启停/日志/备份/恢复；配置只读，无自动更新或安装器替代。把 `/opt/si/app/.venv/bin` 加入 SSH 用户 PATH 后运行 `si`。详细权限、离线语义及限制见 [SI Manager TUI](a7_1_si_manager_tui_v01.md)。下一步 A7.2 First-run Setup / A7.3 Developer Console 尚未实现。

@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 开发阶段：**A7 — Deployment Foundation v0.1**（Windows 离线验证；Linux/systemd 与真实 QQ 部署尚未验证）。
+- 开发阶段：**A7.1 — SI Manager TUI v0.1**（Windows 离线/headless 验证；Linux/systemd 与真实 QQ 部署尚未验证）。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
@@ -27,6 +27,8 @@ B3 增加独立持久化的 Personal Life Context，按 Internal UUID 绑定。�
 B4 建立最小静态 World Place 层，固定 UUID seed 初始化到 SQLite；Life 的地点关联改为 World UUID，并兼容迁移 B3 旧字符串。Prompt 只解析相关地点名称，不自动获得 World description 或亲历记忆。详见 [B4 World State](docs/b4_world_state_v01.md)。未实现动态世界模拟。
 
 ## 开发环境
+
+A7.1 为已部署 Linux 实例提供 SI Manager：将 `/opt/si/app/.venv/bin` 加入 PATH 后运行 `si`（`si --help` 查看帮助），进入 Overview、Service、Deployment Check、Health、只读 Configuration、Backup / Restore、Logs。配置不显示密钥；恢复需要确认及服务停止。操作与权限限制见 [SI Manager TUI](docs/a7_1_si_manager_tui_v01.md)。离线 smoke：`python scripts/run_si_manager_smoke.py`。
 
 A7 提供 Linux `/opt/si` 部署资产、专用 si 用户、uv 锁定的 API-only 环境、systemd、离线 deploy_check/health 和 SQLite-safe backup/restore。config/runtime/backups 与 app checkout 分离；`SI_RUNTIME_DB` 支持外置数据库，本地默认不变。首次安装不自动启动或覆盖配置。完整步骤、持久化合同及限制见 [A7 Deployment Foundation](docs/a7_deployment_foundation_v01.md)。
 
