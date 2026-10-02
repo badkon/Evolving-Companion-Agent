@@ -1,6 +1,7 @@
 """Coordinate one conversation turn while keeping history in memory."""
 
 from collections.abc import Mapping
+import logging
 from typing import Protocol
 from uuid import UUID, uuid4
 
@@ -89,6 +90,7 @@ class Conversation:
         )
         self._last_memory_formation_result: MemoryFormationResult | None = None
         self._last_interaction_error: str | None = None
+        self._last_memory_recall_error: str | None = None
         self.conversation_id = str(uuid4())
         self._history: list[Message] = []
 
@@ -107,7 +109,13 @@ class Conversation:
         """Return only the metadata error type for the most recent completed turn."""
         return self._last_interaction_error
 
+    @property
+    def last_memory_recall_error(self) -> str | None:
+        """Developer-only exception type for this turn; never prompt content."""
+        return self._last_memory_recall_error
+
     def send(self, user_message: str) -> str:
+        self._last_memory_recall_error = None
         user_archive_id = self._archive_store.append_archive_message(
             self.conversation_id, "user", user_message
         )
@@ -132,10 +140,18 @@ class Conversation:
             )
         recalled_memories: tuple[MemoryPromptCandidate, ...] = ()
         if self._memory_recall_service is not None:
-            recall_result = self._memory_recall_service.recall(
-                user_message, self._history
-            )
-            recalled_memories = recall_result.recalled_memories
+            try:
+                recall_result = self._memory_recall_service.recall(
+                    user_message, self._history
+                )
+                recalled_memories = recall_result.recalled_memories
+            except Exception as error:
+                # Recall is auxiliary context, not the main completion boundary.
+                # Do not log exception text/traceback: it may contain private data.
+                self._last_memory_recall_error = type(error).__name__
+                logging.getLogger(__name__).warning(
+                    "memory_recall_failed: %s", self._last_memory_recall_error
+                )
         messages = self._prompt_builder.build(
             self._history,
             user_message,

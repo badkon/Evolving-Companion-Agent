@@ -72,8 +72,12 @@ memory_embeddings 是可重建索引；正常 query 仅补缺失/无效向量，
 
 ## 7. Failure semantics
 
-embedding/reranker API 错误由安全 MemoryProviderError 传播；Conversation 中 recall 在主 LLM 之前，无 best-effort 隔离，因此本轮回复中断，已写的 user Archive 保留。CLI 提示错误，QQ 保留既有失败处理。post-response formation/consolidation 沿原有容错边界，不追溯撤销已完成主回复。
-这是明确的主回复可用性风险，记录为 future patch；本轮不改失败边界，不加自动 local fallback、重试或降级链。
+A6.3 的 Server API availability policy：Memory Retrieval API failure → 本轮降级为 no-memory context → 主 LLM 继续生成 Character response。Conversation 仅将 recall 调用置于独立 best-effort 边界；embedding（含缺失索引构建）、reranker 和 retrieval 基础设施异常时候选整体为空，不用 semantic-only 候选替代，不向 Prompt 注入错误、空 JSON 或“记忆检索失败”。Character 不会被告知基础设施故障，也不将故障当作经历。
+开发侧 `last_memory_recall_error` 仅保存本轮异常类型，warning 标记为 `memory_recall_failed`；不记录 exception 正文/traceback、key/header、Prompt 或 Memory dump。每轮开始清空该诊断；Need=false 不调用 embedding/reranker，也不生成 failure diagnostic。
+Recall 降级自身不修改权威 Memory/Evidence/Supersession，不删除既有索引；失败的索引批次没有无效/半截向量写入，下轮仍可按正常流程重新尝试（不是同轮自动 retry）。主回复成功后仍尝试 formation/consolidation；它们自身失败继续 best-effort，不撤销已成功回复。正常 formation 仍可按原规则保存新 Memory，与 recall 降级区分。
+user Archive、主 LLM、assistant Archive 失败仍是主回复失败，不被本边界捕获。不增加 local/multi-provider fallback、重试、circuit breaker、后台 retry 或 query cache。降级保证 recall 异常不阻断主回复，不保证主 LLM/Archive 本身可用，也不缩短等待 API timeout 的时间。
+
+离线验证：`python scripts/run_memory_provider_smoke.py` 追加 embedding timeout 与 reranker HTTP failure 的 Conversation smoke，检查正常返回与无 Memory 区块；临时 SQLite，不读取密钥，不访问网络或真实 runtime DB。pytest 使用 fake/MockTransport 验证 API 错误、history 连续性、正常归档、formation 尝试及权威数据/缓存保留。
 
 ## 8. Recommended deployment
 

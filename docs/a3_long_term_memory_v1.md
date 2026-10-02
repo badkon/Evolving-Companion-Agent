@@ -84,7 +84,7 @@ Archive user message 先于 recall 与模型调用写入；模型失败时 user 
 ## 7. Failure Semantics
 
 - 主 LLM 调用失败：user Archive 保留；assistant Archive、history 更新及 Memory formation 不发生。
-- Recall/retrieval/reranker 失败：当前 `Conversation` 未将这段路径包成 best-effort；异常会中断本轮回复。此行为与 post-response formation 的容错边界不同。
+- Recall/retrieval/reranker 失败：A3 冻结时异常会中断本轮回复；后续 A6.3 已将 Conversation recall 改为本轮 no-memory context 的 best-effort 边界，继续主 LLM，且不跳过成功回复后的 formation。当前策略见 [A6.2/A6.3 Availability Policy](a6_2_api_deployment_profile.md#7-failure-semantics)，不改写本节历史 smoke evidence。
 - Extraction、验证或保存阶段失败：主回复与已写 Archive 保留；formation 异常被记录为诊断类型，不向用户暴露 provider 错误细节。
 - Consolidation/retrieval/judge/状态更新失败：新 Memory 不回滚；旧状态不会在全部 judge 决策完成前部分更新；失败作为 consolidation diagnostics 返回。
 

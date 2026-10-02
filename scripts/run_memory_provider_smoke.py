@@ -7,6 +7,9 @@ from tempfile import TemporaryDirectory
 
 import httpx
 
+from evolving_companion.character_projection import ProjectedCharacterContext
+from evolving_companion.conversation import Conversation
+from evolving_companion.prompting import Message
 from evolving_companion.memory_providers import (
     APIEmbeddingProvider,
     APIRerankerProvider,
@@ -127,6 +130,54 @@ def main() -> None:
         print(
             "Persistent clients, Need=false no calls, cache reuse, model/provider-switch and explicit rebuild verified; authoritative memories unchanged"
         )
+        for failure in ("embedding", "reranker"):
+
+            def failing_response(request: httpx.Request) -> httpx.Response:
+                if failure == "embedding" and request.url.path == "/embeddings":
+                    raise httpx.ReadTimeout("synthetic timeout", request=request)
+                if failure == "reranker" and request.url.path == "/rerank":
+                    return httpx.Response(503)
+                return respond(request)
+
+            failing_embedding = APIEmbeddingProvider(
+                provider_id="offline-fake-api",
+                model_id="fake-v1",
+                dimension=2,
+                endpoint="https://offline.invalid/embeddings",
+                api_key="fake-not-secret",
+                transport=httpx.MockTransport(failing_response),
+            )
+            failing_reranker = APIRerankerProvider(
+                model_id="fake-rerank",
+                endpoint="https://offline.invalid/rerank",
+                api_key="fake-not-secret",
+                transport=httpx.MockTransport(failing_response),
+            )
+            resources.callback(failing_embedding.close)
+            resources.callback(failing_reranker.close)
+
+            class Client:
+                def complete(self, messages: list[Message]) -> str:
+                    assert "【可参考的长期记忆候选】" not in messages[0]["content"]
+                    assert "memory_recall_failed" not in messages[0]["content"]
+                    return "正常回复"
+
+            conversation = Conversation(
+                Client(),
+                ProjectedCharacterContext("玲"),
+                store,
+                memory_recall_service=MemoryRecallService(
+                    MemoryRetriever(store, failing_embedding),
+                    MemoryReranker(provider=failing_reranker),
+                ),
+            )
+            assert conversation.send("你还记得我的计划吗？") == "正常回复"
+            assert conversation.last_memory_recall_error == "MemoryProviderError"
+            assert len(conversation.history) == 2
+            assert store.list_active_memories() == before
+            print(
+                f"{failure} failure -> no-memory prompt -> normal Character reply verified"
+            )
         print(f"Temporary DB: {store.path} (removed on exit)")
     assert client is not None and client.is_closed
     assert reranker_client is not None and reranker_client.is_closed

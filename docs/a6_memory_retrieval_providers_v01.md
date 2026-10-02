@@ -84,7 +84,7 @@ CLI 和 QQ 入口先按既有规则加载 `.env.local`（OS environment 优先�
 
 `python scripts/run_memory_provider_smoke.py` 默认全离线，用 HTTPX MockTransport 模拟 API，临时 SQLite 运行生产 Top-10 → rerank → Top-3；验证连续请求复用同一 client、Need=false 零请求、memory cache 不重建、切换 provider/model 重建、显式 rebuild、关闭连接和权威 Memory 不变，退出清理临时目录。不加载 `.env.local`、不接真实 runtime DB。
 
-API embedding / reranker failure 仍沿既有 recall 边界中断主 Conversation；user Archive 已保留，主回复不执行。未擅自改成 best-effort。post-response formation/consolidation 仍沿既有独立容错边界。
+A6.3 起 API embedding / reranker / retrieval failure 在 Conversation recall 边界降级为本轮空候选，主 LLM 继续；不注入故障文本，不使用 semantic-only 或 local fallback，不重试。developer-side `memory_recall_failed` warning / `last_memory_recall_error` 仅保存异常类型，主 LLM 与 Archive 的真正失败仍抛出。post-response formation/consolidation 仍按原有独立容错边界尝试。详见 [Server Availability Policy](a6_2_api_deployment_profile.md#7-failure-semantics)。
 分数仅用于同一候选集排序，不是概率、跨 provider 可比指标或全局相关性门槛。既有 `normalized_score` 保留 sigmoid 诊断兼容，不能解释为概率，排序只看 `raw_score`。
 Fake 测试不证明真实厂商兼容性、语义质量或网络 SLA；A6.0 阶段仅验证 Fake，A6.1 的 SiliconFlow 有限真实验证见下一节，其他 API 厂商仍未验证。本版没有 threshold tuning、新 Memory 算法、去重、Memory v2、fallback 或部署框架。
 
