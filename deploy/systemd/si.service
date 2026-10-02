@@ -1,0 +1,28 @@
+[Unit]
+Description=SI Character Service
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=si
+Group=si
+WorkingDirectory=/opt/si/app
+EnvironmentFile=/opt/si/config/si.env
+ExecStart=/opt/si/app/.venv/bin/python -m evolving_companion.server
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=78
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/si/runtime /opt/si/logs /opt/si/backups
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

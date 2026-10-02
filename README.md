@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 开发阶段：**A6.0 — Memory Retrieval Provider Abstraction**（离线 Fake API 验证；A5.1 尚未真实登录 QQ）。
+- 开发阶段：**A7 — Deployment Foundation v0.1**（Windows 离线验证；Linux/systemd 与真实 QQ 部署尚未验证）。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
@@ -27,6 +27,8 @@ B3 增加独立持久化的 Personal Life Context，按 Internal UUID 绑定。�
 B4 建立最小静态 World Place 层，固定 UUID seed 初始化到 SQLite；Life 的地点关联改为 World UUID，并兼容迁移 B3 旧字符串。Prompt 只解析相关地点名称，不自动获得 World description 或亲历记忆。详见 [B4 World State](docs/b4_world_state_v01.md)。未实现动态世界模拟。
 
 ## 开发环境
+
+A7 提供 Linux `/opt/si` 部署资产、专用 si 用户、uv 锁定的 API-only 环境、systemd、离线 deploy_check/health 和 SQLite-safe backup/restore。config/runtime/backups 与 app checkout 分离；`SI_RUNTIME_DB` 支持外置数据库，本地默认不变。首次安装不自动启动或覆盖配置。完整步骤、持久化合同及限制见 [A7 Deployment Foundation](docs/a7_deployment_foundation_v01.md)。
 
 A5 已建立离线 QQ 私聊 Adapter Core：安全过滤后仅调用既有 Conversation 的 `send(text)`，角色回复原样返回；不登录 QQ、不启动 SnowLuma、不建立网络连接。设计与运行边界见 [A5 QQ Private Alpha](docs/a5_qq_private_alpha_v01.md)。完全离线检查：`python scripts/run_qq_adapter_smoke.py`。
 

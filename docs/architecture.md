@@ -6,7 +6,7 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — A6.0 Memory Retrieval Provider Abstraction
+## 当前工程状态 — A7 Deployment Foundation v0.1
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
@@ -20,6 +20,8 @@ A6.0：Memory → EmbeddingProvider → Semantic Retrieval → RerankerProvider 
 当前 A4 v0.1 已增加本地 SQLite 当前 Character State，使用 `identity.internal_id` UUID 作为 State 主键；A4.1 添加确定性 elapsed-time transition；A4.2 添加不持久化的显式 Character Event 及其 State Transition 映射。B1 增加统一可注入 UTC Clock，SQLite `character_runtime` 保存最后成功对话时间，Time Snapshot 转换到 Seed 指定的 Character timezone，并向 Prompt 投影本地日期、时间与离线时长。Conversation 的 State elapsed 与 Prompt 共用本轮快照时间。Archive / Memory 等历史存储时间戳仍由 storage 内部系统时钟写入，是当前保留的边界。详见 [A4 Character State / A4.1 State Transition](a4_character_state_v01.md)、[A4.2 Explicit Character Events](a4_2_character_events_v01.md) 与 [B1 Time Model](b1_time_model_v01.md)。当前没有 memory merge/summary；也没有 World/NPC 模拟或自主行为。完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
 
 ## 1. 核心分层
+
+A7 Deployment Layer 与 Character Core 分开：server entry 按 SI_CHAT_TRANSPORT 选择已有 QQ 入口，使用外部 `/opt/si/config/si.env` 和 `SI_RUNTIME_DB=/opt/si/runtime/si_001.db`，不读取开发 `.env.local`。SQLiteStore 的显式 path 优先；未配置时保持开发默认。systemd 以 si 用户运行，uv.lock 锁定 API-only 环境；离线检查不初始化 seed/runtime，不生成 UUID。备份/恢复使用 sqlite3 backup，恢复前要求停止服务并保护当前 DB。config/runtime/backups 不随 checkout 更新，Device Migration ≠ Character Reset。完整配置、复用评估、安全与验证限制见 [A7 Deployment Foundation](a7_deployment_foundation_v01.md)。未实现 Manager TUI、自动更新或新 Transport 框架。
 
 Conversation 的主回复完成边界为 user Archive、LLM 回复和 assistant Archive 均成功。assistant Archive 后先更新 in-memory history，再独立 best-effort 写入 last interaction、执行 Memory Formation / Consolidation；这些派生操作失败不影响已归档主回复。时间写入失败仅保留异常类型诊断 `last_interaction_error`，数据库锚点允许暂时滞后，不写虚假 fallback 时间。LLM 或 assistant Archive 失败仍中断本轮，不追加 completed history、不更新时间、不执行 formation。
 

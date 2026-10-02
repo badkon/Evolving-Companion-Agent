@@ -8,6 +8,7 @@
 !.env.example
 .env.local
 .env.*.local
+si.env
 
 # --- Character runtime data ---
 # Memories, personality states, relationship states,

@@ -1,6 +1,7 @@
 """SQLite archive and explicit memory storage for the current Character."""
 
 import sqlite3
+import os
 import unicodedata
 from collections.abc import Sequence
 from contextlib import closing
@@ -174,8 +175,12 @@ class MemoryEmbedding:
 class SQLiteStore:
     """Persist raw messages and manually supplied memories in one SQLite file."""
 
-    def __init__(self, path: str | Path = Path("runtime/si_001.db")) -> None:
-        self.path = Path(path)
+    def __init__(self, path: str | Path | None = None) -> None:
+        self.path = Path(
+            path
+            if path is not None
+            else os.environ.get("SI_RUNTIME_DB", "runtime/si_001.db")
+        )
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection:
             connection.executescript(SCHEMA)

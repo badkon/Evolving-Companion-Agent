@@ -33,7 +33,9 @@ from evolving_companion.world import WorldEntityService, load_world_seed
 def create_conversation(resources: ExitStack) -> Conversation:
     root = Path(__file__).resolve().parents[2]
     seed = load_character_seed_data(root / "data/characters/si_001.yaml")
-    store = SQLiteStore(root / "runtime/si_001.db")
+    store = SQLiteStore(
+        os.environ.get("SI_RUNTIME_DB", str(root / "runtime/si_001.db"))
+    )
     clock = SystemClock()
     for diagnostic in WorldEntityService(store, clock).initialize_seed_entities(
         load_world_seed(root / "data/worlds/si_world.yaml")
@@ -64,18 +66,23 @@ def create_conversation(resources: ExitStack) -> Conversation:
     )
 
 
-def main() -> None:
+def main(*, load_environment: bool = True) -> int:
     with ExitStack() as resources:
-        _run(resources)
+        return _run(resources, load_environment=load_environment)
 
 
-def _run(resources: ExitStack) -> None:
+def _run(resources: ExitStack, *, load_environment: bool = True) -> int:
     logging.basicConfig(level=logging.INFO)
-    if not load_local_env():
+    configured = (
+        load_local_env()
+        if load_environment
+        else bool(os.environ.get("DEEPSEEK_API_KEY"))
+    )
+    if not configured:
         print(
             "DEEPSEEK_API_KEY is not configured. Set it in the environment or create .env.local from .env.example."
         )
-        return
+        return 78
     try:
         bot_id = os.environ["SI_QQ_BOT_USER_ID"]
         allowed = [
@@ -89,7 +96,7 @@ def _run(resources: ExitStack) -> None:
             _identifier(user_id, user=True)
     except (KeyError, ValueError):
         print("Configure SI_QQ_BOT_USER_ID and comma-separated SI_QQ_ALLOWED_USER_IDS.")
-        return
+        return 78
     try:
         adapter = QQPrivateChatAdapter(
             create_conversation(resources), allowed_user_ids=allowed, bot_user_id=bot_id
@@ -101,8 +108,11 @@ def _run(resources: ExitStack) -> None:
         )
         asyncio.run(transport.run())
     except KeyboardInterrupt:
-        pass
+        return 0
     except Exception:
         logging.getLogger(__name__).error(
             "OneBot startup/run failed; check local configuration"
         )
+        return 1
+    # A long-running transport exhausting reconnects is not a healthy service exit.
+    return 1
