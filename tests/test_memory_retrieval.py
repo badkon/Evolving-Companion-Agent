@@ -11,12 +11,16 @@ from evolving_companion.storage import MemoryEmbedding, SQLiteStore
 
 
 class FakeEmbeddingService(EmbeddingEncoder):
+    provider_id = "local-bge"
+    model_id = MODEL_NAME
+    dimension = EMBEDDING_DIMENSIONS
+
     def __init__(self, vectors: dict[str, np.ndarray]) -> None:
         self.vectors = vectors
         self.calls: list[list[str]] = []
 
-    def encode(self, texts: str | Sequence[str]) -> np.ndarray:
-        items = [texts] if isinstance(texts, str) else list(texts)
+    def embed_texts(self, texts: Sequence[str]) -> np.ndarray:
+        items = list(texts)
         self.calls.append(items)
         return np.stack([self.vectors[item] for item in items]).astype(np.float32)
 
@@ -50,7 +54,7 @@ def test_active_memories_are_batch_embedded_and_cached_for_reuse(
     assert [candidate.memory_id for candidate in result] == [first_id, second_id]
     assert service.calls == [["第一条", "第二条"], ["问题"]]
     assert archived_id not in {candidate.memory_id for candidate in result}
-    cached = store.get_memory_embeddings([first_id, second_id], MODEL_NAME)
+    cached = store.get_memory_embeddings([first_id, second_id], retriever.index_key)
     assert set(cached) == {first_id, second_id}
     assert all(item.dimensions == EMBEDDING_DIMENSIONS for item in cached.values())
     assert all(
@@ -103,7 +107,7 @@ def test_model_mismatch_and_corrupt_vectors_are_rebuilt(tmp_path: Path) -> None:
             ),
             MemoryEmbedding(
                 second_id,
-                MODEL_NAME,
+                MemoryRetriever(store, FakeEmbeddingService({})).index_key,
                 2,
                 np.array([1, 0], dtype=np.float32).tobytes(),
                 "now",
@@ -122,7 +126,9 @@ def test_model_mismatch_and_corrupt_vectors_are_rebuilt(tmp_path: Path) -> None:
 
     assert service.calls[0] == ["旧模型缓存", "损坏缓存"]
     assert result[0].memory_id == second_id
-    repaired = store.get_memory_embeddings([first_id, second_id], MODEL_NAME)
+    repaired = store.get_memory_embeddings(
+        [first_id, second_id], MemoryRetriever(store, service).index_key
+    )
     assert set(repaired) == {first_id, second_id}
     assert all(item.dimensions == EMBEDDING_DIMENSIONS for item in repaired.values())
     assert np.array_equal(

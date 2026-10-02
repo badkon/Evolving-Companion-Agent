@@ -1,24 +1,20 @@
-"""Local cosine-similarity retrieval over active SQLite memories."""
+"""Provider-independent cosine retrieval over active SQLite memories."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Protocol
+import json
 
 import numpy as np
 
-from evolving_companion.embeddings import (
-    EMBEDDING_DIMENSIONS,
-    MODEL_NAME,
-    EmbeddingService,
-)
+from evolving_companion.embeddings import LocalBGEEmbeddingProvider
+from evolving_companion.memory_providers import EmbeddingProvider
 from evolving_companion.storage import MemoryEmbedding, MemoryRecord, SQLiteStore
 
 
-class EmbeddingEncoder(Protocol):
-    def encode(self, texts: str | Sequence[str]) -> np.ndarray: ...
+EmbeddingEncoder = EmbeddingProvider
 
 
 @dataclass(frozen=True)
@@ -32,8 +28,8 @@ class MemoryRetrievalCandidate:
     similarity: float
 
 
-def _cached_vector(item: MemoryEmbedding) -> np.ndarray | None:
-    if item.dimensions != EMBEDDING_DIMENSIONS:
+def _cached_vector(item: MemoryEmbedding, dimension: int) -> np.ndarray | None:
+    if item.dimensions != dimension:
         return None
     if len(item.embedding) != item.dimensions * np.dtype(np.float32).itemsize:
         return None
@@ -51,10 +47,30 @@ class MemoryRetriever:
     def __init__(
         self,
         store: SQLiteStore,
-        embedding_service: EmbeddingEncoder | None = None,
+        embedding_service: EmbeddingProvider | None = None,
     ) -> None:
         self._store = store
-        self._embedding_service = embedding_service or EmbeddingService()
+        self._embedding_service = embedding_service or LocalBGEEmbeddingProvider()
+
+    @property
+    def index_key(self) -> str:
+        """Versioned index descriptor in the existing model_name TEXT column."""
+        provider = self._embedding_service
+        return json.dumps(
+            [
+                "memory-index-v1",
+                provider.provider_id,
+                provider.model_id,
+                provider.dimension,
+            ],
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+
+    def rebuild_memory_embeddings(self) -> int:
+        memories = self._store.list_active_memories()
+        self._ensure_active_embeddings(memories, force=True)
+        return len(memories)
 
     def retrieve(self, query: str, top_n: int = 10) -> list[MemoryRetrievalCandidate]:
         if not query.strip():
@@ -67,8 +83,8 @@ class MemoryRetriever:
             return []
 
         vectors = self._ensure_active_embeddings(memories)
-        query_vector = self._embedding_service.encode(query)
-        if query_vector.shape != (1, EMBEDDING_DIMENSIONS):
+        query_vector = self._embedding_service.embed_texts([query])
+        if query_vector.shape != (1, self._embedding_service.dimension):
             raise ValueError("query embedding has an unexpected shape")
         if not np.isfinite(query_vector).all() or not np.isclose(
             np.linalg.norm(query_vector[0]), 1.0, atol=1e-4
@@ -98,24 +114,29 @@ class MemoryRetriever:
         ]
 
     def _ensure_active_embeddings(
-        self, memories: Sequence[MemoryRecord]
+        self, memories: Sequence[MemoryRecord], *, force: bool = False
     ) -> dict[str, np.ndarray]:
-        model_name = MODEL_NAME
+        model_name = self.index_key
+        dimension = self._embedding_service.dimension
         memory_ids = [memory.id for memory in memories]
-        cached = self._store.get_memory_embeddings(memory_ids, model_name)
+        cached = (
+            {} if force else self._store.get_memory_embeddings(memory_ids, model_name)
+        )
         vectors: dict[str, np.ndarray] = {}
         missing: list[MemoryRecord] = []
         for memory in memories:
             item = cached.get(memory.id)
-            vector = _cached_vector(item) if item is not None else None
+            vector = _cached_vector(item, dimension) if item is not None else None
             if vector is None:
                 missing.append(memory)
             else:
                 vectors[memory.id] = vector
 
         if missing:
-            encoded = self._embedding_service.encode([item.content for item in missing])
-            if encoded.shape != (len(missing), EMBEDDING_DIMENSIONS):
+            encoded = self._embedding_service.embed_texts(
+                [item.content for item in missing]
+            )
+            if encoded.shape != (len(missing), dimension):
                 raise ValueError("memory embeddings have an unexpected shape")
             if not np.isfinite(encoded).all():
                 raise ValueError("memory embeddings contain non-finite values")
@@ -132,7 +153,7 @@ class MemoryRetriever:
                     MemoryEmbedding(
                         memory_id=memory.id,
                         model_name=model_name,
-                        dimensions=EMBEDDING_DIMENSIONS,
+                        dimensions=dimension,
                         embedding=normalized.tobytes(),
                         created_at=created_at,
                     )

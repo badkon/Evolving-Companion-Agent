@@ -11,8 +11,15 @@ EMBEDDING_DIMENSIONS = 768
 _MODEL_INSTANCE = None
 
 
-class EmbeddingService:
+class LocalBGEEmbeddingProvider:
     """Encode text with one cached BGE model instance per service instance."""
+
+    provider_id = "local-bge"
+    model_id = MODEL_NAME
+    dimension = EMBEDDING_DIMENSIONS
+
+    def embed_texts(self, texts: Sequence[str]) -> np.ndarray:
+        return self.encode(texts)
 
     def _load_model(self):
         global _MODEL_INSTANCE
@@ -50,3 +57,7 @@ class EmbeddingService:
         if np.any(norms == 0):
             raise ValueError("embedding model returned a zero vector")
         return np.asarray(vectors / norms, dtype=np.float32)
+
+
+# Compatibility name for existing local experiment scripts.
+EmbeddingService = LocalBGEEmbeddingProvider

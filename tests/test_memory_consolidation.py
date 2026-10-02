@@ -352,8 +352,12 @@ def test_supersede_status_and_relationship_update_are_atomic(tmp_path: Path) -> 
 
 
 class ConstantEmbedding(EmbeddingEncoder):
-    def encode(self, texts: str | Sequence[str]) -> np.ndarray:
-        items = [texts] if isinstance(texts, str) else list(texts)
+    provider_id = "test"
+    model_id = "constant"
+    dimension = EMBEDDING_DIMENSIONS
+
+    def embed_texts(self, texts: Sequence[str]) -> np.ndarray:
+        items = list(texts)
         vectors = np.zeros((len(items), EMBEDDING_DIMENSIONS), dtype=np.float32)
         vectors[:, 0] = 1.0
         return vectors

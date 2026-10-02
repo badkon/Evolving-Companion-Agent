@@ -38,6 +38,7 @@ from evolving_companion.memory_formation import MemoryFormationService
 from evolving_companion.memory_recall import MemoryRecallService
 from evolving_companion.memory_reranker import MemoryReranker
 from evolving_companion.memory_retrieval import MemoryRetriever
+from evolving_companion.memory_provider_config import create_memory_providers
 from evolving_companion.storage import SQLiteStore
 from evolving_companion.clock import SystemClock
 from evolving_companion.time_model import CharacterTimeService, format_offline_duration
@@ -77,8 +78,11 @@ def main() -> None:
         time_service = CharacterTimeService(
             store, seed_data.identity.internal_id, seed_data.timezone, clock
         )
-        retriever = MemoryRetriever(store)
-        recall_service = MemoryRecallService(retriever, MemoryReranker())
+        embedding_provider, reranker_provider = create_memory_providers()
+        retriever = MemoryRetriever(store, embedding_provider)
+        recall_service = MemoryRecallService(
+            retriever, MemoryReranker(provider=reranker_provider)
+        )
         llm_client = LLMClient()
         consolidation_service = MemoryConsolidationService(
             store, retriever, MemoryConsolidationJudge(llm_client)

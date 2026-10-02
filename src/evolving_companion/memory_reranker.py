@@ -1,4 +1,4 @@
-"""Lazy CPU CrossEncoder reranking for retrieved memory candidates."""
+"""Provider-independent score ordering for retrieved memory candidates."""
 
 from __future__ import annotations
 
@@ -8,11 +8,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from evolving_companion.memory_retrieval import MemoryRetrievalCandidate
-
-RERANKER_MODEL_NAME = "BAAI/bge-reranker-base"
-RERANKER_DEVICE = "cpu"
-RERANKER_BATCH_SIZE = 10
-_CROSS_ENCODER: Any = None
+from evolving_companion.memory_providers import (
+    LocalBGERerankerProvider,
+    RerankerProvider,
+)
 
 ScoreFunction = Callable[[Sequence[tuple[str, str]]], Any]
 
@@ -31,10 +30,18 @@ class RerankedMemoryCandidate:
 
 
 class MemoryReranker:
-    """Rerank a semantic candidate set by raw CrossEncoder score."""
+    """Rerank a semantic candidate set by raw provider score (not probability)."""
 
-    def __init__(self, scorer: ScoreFunction | None = None) -> None:
+    def __init__(
+        self,
+        scorer: ScoreFunction | None = None,
+        *,
+        provider: RerankerProvider | None = None,
+    ) -> None:
+        if scorer is not None and provider is not None:
+            raise ValueError("provide a scorer or a provider, not both")
         self._scorer = scorer
+        self._provider = provider or LocalBGERerankerProvider()
 
     def rerank(
         self,
@@ -74,7 +81,7 @@ class MemoryReranker:
         if self._scorer is not None:
             values = self._scorer(pairs)
         else:
-            values = self._score_with_model(pairs)
+            values = self._provider.score(pairs[0][0], [text for _, text in pairs])
         import numpy as np
 
         scores = np.asarray(values, dtype=np.float64)
@@ -85,28 +92,6 @@ class MemoryReranker:
         if not np.isfinite(scores).all():
             raise ValueError("reranker returned a non-finite score")
         return [float(score) for score in scores]
-
-    @staticmethod
-    def _score_with_model(pairs: list[tuple[str, str]]) -> Any:
-        model = MemoryReranker._load_model()
-        from torch.nn import Identity
-
-        return model.predict(
-            pairs,
-            activation_fn=Identity(),
-            batch_size=RERANKER_BATCH_SIZE,
-            show_progress_bar=False,
-            convert_to_numpy=True,
-        )
-
-    @staticmethod
-    def _load_model() -> Any:
-        global _CROSS_ENCODER
-        if _CROSS_ENCODER is None:
-            from sentence_transformers import CrossEncoder
-
-            _CROSS_ENCODER = CrossEncoder(RERANKER_MODEL_NAME, device=RERANKER_DEVICE)
-        return _CROSS_ENCODER
 
     @staticmethod
     def _sigmoid(raw_score: float) -> float:

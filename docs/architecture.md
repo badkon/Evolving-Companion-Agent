@@ -6,14 +6,16 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — A5.1 OneBot WebSocket Transport v0.1 Complete
+## 当前工程状态 — A6.0 Memory Retrieval Provider Abstraction
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
 A2 v0.1 将初始 Seed Character Data 独立存放在 `data/characters/si_001.yaml`，数据路径为 YAML → Pydantic validation → Character Projection → PromptBuilder → LLM。
 SI-001 的 Character Seed Data 已包含固定 UUID `identity.internal_id`，作为后续 Character-owned runtime records 的稳定机器身份键；`development_id = SI-001`、人类可见名称与 `continuity_generation` 各自保持独立语义。Internal UUID 不投影到普通 Character Prompt。
 当前 A3 冻结基线包含 SQLite Archive / Evidence、rule-based Memory Need 与 Selective Context、active-memory semantic retrieval、CrossEncoder rerank、Top-3 candidate injection、成功回复后的 Memory Extraction，以及保守的 `keep_both` / `supersede_old` / `uncertain` consolidation。详细流程、接受/延后决策、验证证据与已知限制统一见 [A3 Long-term Memory v1](a3_long_term_memory_v1.md)，避免在此重复维护阶段细节。
-LLM Adapter 只从 `DEEPSEEK_API_KEY` 环境变量读取 API Key；CLI 与真实 LLM 实验入口可在启动时从 Git 忽略的项目根目录 `.env.local` 加载该变量，且不覆盖已存在的进程环境变量。运行时依赖为 openai、numpy、pydantic、PyYAML、python-dotenv 和 sentence-transformers，开发依赖为 pytest 和 Ruff。
+LLM Adapter 只从 `DEEPSEEK_API_KEY` 环境变量读取 API Key；CLI 与真实 LLM 实验入口可在启动时从 Git 忽略的项目根目录 `.env.local` 加载该变量，且不覆盖已存在的进程环境变量。sentence-transformers 已移至 `local-memory` optional extra；核心保留 NumPy 并直接依赖 HTTPX，开发依赖为 pytest 和 Ruff。
+
+A6.0：Memory → EmbeddingProvider → Semantic Retrieval → RerankerProvider → Top-K Injection。默认 local/local 保留 CPU BGE；CLI / QQ 入口可显式配置 api/api 或 hybrid，API-only 不加载本地模型。Need Gate、Context Policy、semantic Top-10 → rerank → max Top-3、active-only 和无 threshold 均不变。memory_embeddings 的既有 model_name 列保存 provider/model/dimension 版本化描述符，旧缓存不误用，active 索引可显式/按需重建；权威 Memory/Evidence/Supersession 和 DB schema 不改变。API recall failure 仍中断本轮，不改变主回复完成边界。配置、HTTP contract、依赖与限制见 [A6 Memory Providers](a6_memory_retrieval_providers_v01.md)。
 
 当前 A4 v0.1 已增加本地 SQLite 当前 Character State，使用 `identity.internal_id` UUID 作为 State 主键；A4.1 添加确定性 elapsed-time transition；A4.2 添加不持久化的显式 Character Event 及其 State Transition 映射。B1 增加统一可注入 UTC Clock，SQLite `character_runtime` 保存最后成功对话时间，Time Snapshot 转换到 Seed 指定的 Character timezone，并向 Prompt 投影本地日期、时间与离线时长。Conversation 的 State elapsed 与 Prompt 共用本轮快照时间。Archive / Memory 等历史存储时间戳仍由 storage 内部系统时钟写入，是当前保留的边界。详见 [A4 Character State / A4.1 State Transition](a4_character_state_v01.md)、[A4.2 Explicit Character Events](a4_2_character_events_v01.md) 与 [B1 Time Model](b1_time_model_v01.md)。当前没有 memory merge/summary；也没有 World/NPC 模拟或自主行为。完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
 

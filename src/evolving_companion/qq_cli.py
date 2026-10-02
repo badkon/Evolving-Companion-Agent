@@ -22,6 +22,7 @@ from evolving_companion.memory_formation import MemoryFormationService
 from evolving_companion.memory_recall import MemoryRecallService
 from evolving_companion.memory_reranker import MemoryReranker
 from evolving_companion.memory_retrieval import MemoryRetriever
+from evolving_companion.memory_provider_config import create_memory_providers
 from evolving_companion.qq_adapter import QQPrivateChatAdapter, _identifier
 from evolving_companion.qq_transport import OneBotWebSocketTransport
 from evolving_companion.storage import SQLiteStore
@@ -37,13 +38,16 @@ def create_conversation() -> Conversation:
         load_world_seed(root / "data/worlds/si_world.yaml")
     ):
         logging.getLogger(__name__).warning("World migration: %s", diagnostic)
-    retriever = MemoryRetriever(store)
+    embedding_provider, reranker_provider = create_memory_providers()
+    retriever = MemoryRetriever(store, embedding_provider)
     llm = LLMClient()
     return Conversation(
         llm,
         CharacterProjector().project(seed),
         store,
-        memory_recall_service=MemoryRecallService(retriever, MemoryReranker()),
+        memory_recall_service=MemoryRecallService(
+            retriever, MemoryReranker(provider=reranker_provider)
+        ),
         memory_formation_service=MemoryFormationService(
             MemoryExtractor(llm),
             store,

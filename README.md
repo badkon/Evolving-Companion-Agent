@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 开发阶段：**A5.1 — OneBot WebSocket Transport v0.1 — Complete**（本地 Fake Server 验证，未真实登录 QQ）。
+- 开发阶段：**A6.0 — Memory Retrieval Provider Abstraction**（离线 Fake API 验证；A5.1 尚未真实登录 QQ）。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
@@ -72,7 +72,9 @@ ruff format --check .
 ```
 
 Python import 包名为 `evolving_companion`，源码位于 `src/evolving_companion/`。
-A1 使用 OpenAI Python SDK 作为 DeepSeek OpenAI-compatible API 的通信客户端；A2 使用 Pydantic 校验 Seed Data、PyYAML 读取 YAML；A3.2b 使用 sentence-transformers 加载本地 BGE 模型，并使用 NumPy 处理向量。运行时依赖为 `openai`、`numpy`、`pydantic`、`PyYAML`、`python-dotenv` 和 `sentence-transformers`，开发依赖为 pytest 和 Ruff。CI 在 Python 3.12 上执行相同的安装与检查步骤。
+A1 使用 OpenAI Python SDK 作为 DeepSeek OpenAI-compatible API 的通信客户端；A2 使用 Pydantic 校验 Seed Data、PyYAML 读取 YAML；Memory Retrieval 核心使用 NumPy 和 HTTPX。A6 将本地 BGE 的 `sentence-transformers` 移至可选 `local-memory` 依赖；本地对话/已有 BGE benchmark 请安装 `python -m pip install -e ".[dev,local-memory]"`。API-only 和 CI 可继续使用 `.[dev]`，不强制安装 torch/transformers。
+
+A6 默认仍为 local/local；CLI 和 QQ 入口支持显式 API provider 配置，沿用 `.env.local` 且不覆盖系统环境变量。配置、HTTP 格式和限制见 [A6 Memory Providers](docs/a6_memory_retrieval_providers_v01.md)。完全离线验证：`python scripts/run_memory_provider_smoke.py`（临时 DB、fake API，无需 key 或模型）。
 
 首次运行真实 LLM 前，在仓库根目录复制 `.env.example` 为 `.env.local`，并填写 `DEEPSEEK_API_KEY`。`.env.local` 已被 Git 忽略，不应提交。已有的操作系统环境变量优先，不会被本地文件覆盖。
 
