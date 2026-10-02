@@ -164,6 +164,11 @@ def test_latency_cost_and_missing_usage_not_fabricated() -> None:
     assert summary["p50_seconds"] == 2
     assert summary["p95_seconds"] == pytest.approx(2.9)
     assert summary["estimated_cost"] == pytest.approx(0.0006)
+    assert summary["first_request_seconds"] == 1
+    assert summary["warm_requests"] == 2
+    assert summary["warm_average_seconds"] == 2.5
+    assert summary["warm_p50_seconds"] == 2.5
+    assert summary["warm_p95_seconds"] == pytest.approx(2.95)
     stats.records.append({"success": False, "seconds": 4})
     assert stats.summary(2)["estimated_cost"] is None
     assert RequestStats().summary()["input_tokens"] is None
@@ -230,16 +235,19 @@ def test_api_only_script_with_mock_transport_never_loads_bge(
     monkeypatch.setattr(builtins, "__import__", guarded)
     monkeypatch.setenv("SILICONFLOW_API_KEY", "fake-secret-not-real")
     main = namespace["main"]
-    monkeypatch.setitem(main.__globals__, "load_local_env", lambda: None)
+    run = main.__globals__["_run"]
+    monkeypatch.setitem(run.__globals__, "load_local_env", lambda: None)
     monkeypatch.setitem(
-        main.__globals__,
+        run.__globals__,
         "create_siliconflow_providers",
         lambda **kwargs: create_siliconflow_providers(
             dimension=2, delegate=httpx.MockTransport(response)
         ),
     )
     monkeypatch.setattr(
-        sys, "argv", ["benchmark", "--output-dir", str(tmp_path / "results")]
+        sys,
+        "argv",
+        ["benchmark", "--latency-profile", "--output-dir", str(tmp_path / "results")],
     )
     assert main() == 0
     result: dict[str, Any] = json.loads(
@@ -250,3 +258,14 @@ def test_api_only_script_with_mock_transport_never_loads_bge(
     assert result["profiles"][0]["dimension_verified"]
     assert len(result["profiles"][0]["queries"][0]["injection_top3"]) == 3
     assert "fake-secret-not-real" not in json.dumps(result)
+    latency = result["profiles"][0]["recall_latency"]
+    assert len(latency["samples"]) == 6
+    assert all(
+        row["embedding_calls"] == row["reranker_calls"] == 1
+        for row in latency["samples"][:5]
+    )
+    assert (
+        latency["samples"][-1]["embedding_calls"]
+        == latency["samples"][-1]["reranker_calls"]
+        == 0
+    )

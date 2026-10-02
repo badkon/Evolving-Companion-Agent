@@ -59,20 +59,35 @@ class _APIEndpoint:
         self._api_key = api_key
         self._timeout = timeout
         self._transport = transport
+        self._client: httpx.Client | None = None
+        self._closed = False
+
+    def close(self) -> None:
+        """Release the owned pool once; a closed provider cannot be reopened."""
+        if not self._closed:
+            self._closed = True
+            if self._client is not None:
+                self._client.close()
+            elif self._transport is not None:
+                self._transport.close()
 
     def _post(self, payload: dict[str, Any]) -> Any:
-        # Short-lived client has explicit ownership; no persistent HTTP resource.
+        if self._closed:
+            raise MemoryProviderError("memory API provider is closed")
         try:
-            with httpx.Client(
-                timeout=self._timeout, transport=self._transport, follow_redirects=False
-            ) as client:
-                response = client.post(
-                    self._endpoint,
-                    headers={"Authorization": f"Bearer {self._api_key}"},
-                    json={"model": self.model_id, **payload},
+            if self._client is None:
+                self._client = httpx.Client(
+                    timeout=self._timeout,
+                    transport=self._transport,
+                    follow_redirects=False,
                 )
-                response.raise_for_status()
-                return response.json()
+            response = self._client.post(
+                self._endpoint,
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                json={"model": self.model_id, **payload},
+            )
+            response.raise_for_status()
+            return response.json()
         except httpx.TimeoutException:
             raise MemoryProviderError("memory API request timed out") from None
         except httpx.HTTPStatusError as error:

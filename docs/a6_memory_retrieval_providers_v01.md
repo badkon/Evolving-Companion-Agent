@@ -27,7 +27,7 @@ HTTPX 作为现有 SDK 已使用的成熟通信库，新增直接依赖以明确
 Sentence Transformers 继续 Direct Reuse，仅移为 optional extra；Apache-2.0，成熟模型接口，但带来 torch/transformers 大型依赖，所以不作为 API-only 必需项。[项目与许可证](https://github.com/huggingface/sentence-transformers)、[CrossEncoder API](https://www.sbert.net/docs/package_reference/cross_encoder/model.html)。
 API wire format 仅 Design Reference：[Jina embedding API 的兼容 JSON 格式说明](https://jina.ai/en-US/embeddings/)、[Cohere rerank 的 index / relevance_score 格式](https://docs.cohere.com/reference/rerank)。未引入厂商 SDK、框架、registry 或 router；若服务格式不兼容，应另行明确 adapter 需求，而不是猜测响应格式。
 
-每次请求显式关闭 HTTP client；默认 timeout 30 秒，无 retry / fallback / 自动厂商切换。HTTP、timeout、JSON、shape、index、非有限值错误返回安全 `MemoryProviderError`，不带密钥、URL 或响应正文，不记录 payload。endpoint 禁止 URL credentials / query / fragment；key 仅放 Authorization header。
+A6.2 起每个 API provider 首次请求懒创建一个 HTTPX Client，后续请求复用其连接池；入口用 ExitStack 注册 `close()`，正常退出和异常退出均释放。关闭幂等，关闭后不重新打开。默认 timeout 30 秒，无 retry / fallback / 自动厂商切换。HTTP、timeout、JSON、shape、index、非有限值错误返回安全 `MemoryProviderError`，不带密钥、URL 或响应正文，不记录 payload。endpoint 禁止 URL credentials / query / fragment；key 仅放 Authorization header。复用方案 Direct Reuse 现有 [HTTPX Client / pooling / close](https://www.python-httpx.org/advanced/clients/)，不新增依赖或拷贝外部代码；连接是否实际存活还取决于空闲超时、网络和服务端。
 API 会向所配置服务发送检索 query 和 Memory content；隐私、数据保留政策与厂商条款须在真实部署前评估，Fake smoke 不验证这些边界。接口可替换，不将响应 metadata 写入 Character Data。
 
 ## 4. Index Compatibility
@@ -74,14 +74,15 @@ CLI 和 QQ 入口先按既有规则加载 `.env.local`（OS environment 优先�
 ## 8. Deployment Profiles
 
 - Local Dev：local/local，需要 local-memory extra；当前兼容默认。
-- Server Lite：api/api，长期服务器目标；显式配置后不需要本地 ML stack。
+- Server API：api/api，A6.2 推荐服务器 profile；显式配置后不需要本地 ML stack。
 - Hybrid：api/local 或 local/api；只要使用一个 local provider 就需要 local-memory extra。
 
 这是配置组合，不是部署系统；无自动 profile 切换、Developer Console 或 deployment script。
+完整 SiliconFlow `.env.local` 配置与延迟审查见 [A6.2 API Deployment Profile](a6_2_api_deployment_profile.md)。code default 仍为 local/local。
 
 ## 9. Smoke / Known Limitations
 
-`python scripts/run_memory_provider_smoke.py` 默认全离线，用 HTTPX MockTransport 模拟 API，临时 SQLite 运行生产 Top-10 → rerank → Top-3；验证复用、切换模型重建、显式 rebuild 和权威 Memory 不变，退出清理临时目录。不加载 `.env.local`、不接真实 runtime DB。
+`python scripts/run_memory_provider_smoke.py` 默认全离线，用 HTTPX MockTransport 模拟 API，临时 SQLite 运行生产 Top-10 → rerank → Top-3；验证连续请求复用同一 client、Need=false 零请求、memory cache 不重建、切换 provider/model 重建、显式 rebuild、关闭连接和权威 Memory 不变，退出清理临时目录。不加载 `.env.local`、不接真实 runtime DB。
 
 API embedding / reranker failure 仍沿既有 recall 边界中断主 Conversation；user Archive 已保留，主回复不执行。未擅自改成 best-effort。post-response formation/consolidation 仍沿既有独立容错边界。
 分数仅用于同一候选集排序，不是概率、跨 provider 可比指标或全局相关性门槛。既有 `normalized_score` 保留 sigmoid 诊断兼容，不能解释为概率，排序只看 `raw_score`。
@@ -98,6 +99,7 @@ HTTP 格式参考 [SiliconFlow 官方 OpenAPI](https://github.com/siliconflow/si
 ```bash
 python scripts/run_siliconflow_provider_smoke.py
 python scripts/run_siliconflow_retrieval_benchmark.py
+python scripts/run_siliconflow_retrieval_benchmark.py --latency-profile
 # 仅在已安装 local-memory 时显式运行本地 CPU baseline
 python scripts/run_siliconflow_retrieval_benchmark.py --with-local-baseline
 ```
@@ -112,3 +114,5 @@ HTTP error / 429 rate limit / 5xx server error / timeout / malformed response �
 
 只有显式指定 `--embedding-price-per-million` / `--reranker-price-per-million`（每百万 input tokens 单价）时才估算费用，可同时指定 `--currency CNY` 等标签；必须每个请求都返回 input usage，否则估算为 null。单价不进入核心 provider，未返回 usage 不按 0 补齐。默认不假设币种或价格。
 报告 Decision 默认为 `INCONCLUSIVE`，不自动宣告 winner。人工评估结果与限制见 [A6.1 Benchmark Evidence](benchmarks/a6_1_siliconflow_qwen3_retrieval.md)。生产 local/local 默认继续保留，是否切换等待人工确认。
+
+A6.2 的 `--latency-profile` 额外执行生产 Need Gate → query embedding → semantic Top-10 → rerank → Top-3：同一已热索引上 5 次 Need=true 与 1 次 Need=false，记录整体 elapsed 与 API 次数；断言每次 true 为 embedding/rerank 各 1、false 各 0。报告 first request 与后续 warm avg/p50/p95；first 指客户端首请求，不证明服务端模型冷启动，embedding 首批 32 条与后续 query 请求 payload 不同。计时 transport 自身也复用连接池，脚本退出关闭 providers。真实调用仅人工显式运行，不属于 pytest。

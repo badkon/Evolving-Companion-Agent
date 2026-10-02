@@ -1,6 +1,7 @@
 """Real API benchmark; optional explicit CPU BGE comparison, never production DB."""
 
 import argparse
+from contextlib import ExitStack
 from datetime import datetime, timezone
 import json
 import math
@@ -25,8 +26,14 @@ def nonnegative_price(value: str) -> float:
 
 
 def main() -> int:
+    with ExitStack() as resources:
+        return _run(resources)
+
+
+def _run(resources: ExitStack) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--with-local-baseline", action="store_true")
+    parser.add_argument("--latency-profile", action="store_true")
     parser.add_argument(
         "--dimension",
         type=int,
@@ -49,6 +56,8 @@ def main() -> int:
     except ValueError as error:
         print(error)
         return 1
+    resources.callback(embedding.close)
+    resources.callback(reranker.close)
     result = {
         "setup": benchmark_setup(),
         "decision": "INCONCLUSIVE",
@@ -56,7 +65,12 @@ def main() -> int:
         "profiles": [],
     }
     api_result = run_profile(
-        "siliconflow-qwen3", embedding, reranker, embedding_stats, reranker_stats
+        "siliconflow-qwen3",
+        embedding,
+        reranker,
+        embedding_stats,
+        reranker_stats,
+        latency_profile=args.latency_profile,
     )
     api_result["embedding_summary"] = embedding_stats.summary(
         args.embedding_price_per_million
@@ -80,6 +94,7 @@ def main() -> int:
             local_embedding_stats,
             local_reranker_stats,
             local=True,
+            latency_profile=args.latency_profile,
         )
         local_result["embedding_summary"] = local_embedding_stats.summary()
         local_result["reranker_summary"] = local_reranker_stats.summary()

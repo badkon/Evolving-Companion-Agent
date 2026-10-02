@@ -45,6 +45,8 @@ def main() -> int:
         print(f"Smoke failed; no retry: {error}")
         return 1
     finally:
+        embedding.close()
+        reranker.close()
         print("Embedding:", embedding_stats.summary())
         print("Reranker:", reranker_stats.summary())
     print("Real SiliconFlow smoke passed")

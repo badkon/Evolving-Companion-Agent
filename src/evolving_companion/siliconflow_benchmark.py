@@ -23,6 +23,7 @@ from evolving_companion.memory_providers import (
     RerankerProvider,
 )
 from evolving_companion.memory_retrieval import MemoryRetriever
+from evolving_companion.memory_recall import MemoryRecallService
 from evolving_companion.memory_reranker import MemoryReranker
 from evolving_companion.memory_retrieval_benchmark import (
     calculate_metrics,
@@ -60,6 +61,7 @@ class RequestStats:
 
     def summary(self, price_per_million: float | None = None) -> dict[str, Any]:
         latencies = [item["seconds"] for item in self.records]
+        warm = latencies[1:]
         input_counts = [
             item["input_tokens"]
             for item in self.records
@@ -77,6 +79,11 @@ class RequestStats:
             "average_seconds": float(np.mean(latencies)) if latencies else None,
             "p50_seconds": float(np.percentile(latencies, 50)) if latencies else None,
             "p95_seconds": float(np.percentile(latencies, 95)) if latencies else None,
+            "first_request_seconds": latencies[0] if latencies else None,
+            "warm_requests": len(warm),
+            "warm_average_seconds": float(np.mean(warm)) if warm else None,
+            "warm_p50_seconds": float(np.percentile(warm, 50)) if warm else None,
+            "warm_p95_seconds": float(np.percentile(warm, 95)) if warm else None,
             "input_tokens": sum(input_counts) if input_counts else None,
             "total_tokens": sum(totals) if totals else None,
             "requests_with_input_usage": len(input_counts),
@@ -97,7 +104,12 @@ class RecordingTransport(httpx.BaseTransport):
         self, stats: RequestStats, delegate: httpx.BaseTransport | None = None
     ):
         self.stats = stats
-        self.delegate = delegate
+        self.delegate = (
+            delegate if delegate is not None else httpx.HTTPTransport(retries=0)
+        )
+
+    def close(self) -> None:
+        self.delegate.close()
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         started = perf_counter()
@@ -109,14 +121,8 @@ class RecordingTransport(httpx.BaseTransport):
             "total_tokens": None,
         }
         try:
-            if self.delegate is not None:
-                response = self.delegate.handle_request(request)
-                response.read()
-            else:
-                # A6 adapters close their client each request; transport owns its socket here.
-                with httpx.HTTPTransport(retries=0) as transport:
-                    response = transport.handle_request(request)
-                    response.read()
+            response = self.delegate.handle_request(request)
+            response.read()
             record["http_status"] = response.status_code
             record["success"] = response.is_success
             if not response.is_success:
@@ -252,6 +258,7 @@ def run_profile(
     *,
     fixture_path: Path = FIXTURE_PATH,
     local: bool = False,
+    latency_profile: bool = False,
 ) -> dict[str, Any]:
     fixture = load_cases(fixture_path)
     result: dict[str, Any] = {
@@ -334,6 +341,10 @@ def run_profile(
             result["reranked_metrics"] = calculate_metrics(
                 fixture["queries"], reranked_rankings
             )
+            if latency_profile:
+                result["recall_latency"] = measure_recall_latency(
+                    retriever, ranker, embedding_stats, reranker_stats
+                )
             result["complete"] = True
         except (MemoryProviderError, ImportError, OSError, ValueError) as error:
             # No unsafe traceback or vendor body in reports; fail-fast, no retry.
@@ -344,6 +355,47 @@ def run_profile(
             )
             print(f"{name} failed; no retry: {result['failure']}")
     return result
+
+
+def measure_recall_latency(
+    retriever: MemoryRetriever,
+    ranker: MemoryReranker,
+    embedding_stats: RequestStats,
+    reranker_stats: RequestStats,
+) -> dict[str, Any]:
+    """Warm-index production Need Gate path; synthetic queries, no LLM reply."""
+    recall = MemoryRecallService(retriever, ranker)
+    rows = []
+    for query in ["你还记得我的计划吗？"] * 5 + ["你好"]:
+        counts = (len(embedding_stats.records), len(reranker_stats.records))
+        started = perf_counter()
+        result = recall.recall(query, [])
+        seconds = perf_counter() - started
+        delta = (
+            len(embedding_stats.records) - counts[0],
+            len(reranker_stats.records) - counts[1],
+        )
+        expected = (1, 1) if result.memory_needed else (0, 0)
+        if delta != expected:
+            raise ValueError("unexpected provider calls in warm-index recall")
+        rows.append(
+            {
+                "query": query,
+                "memory_needed": result.memory_needed,
+                "seconds": seconds,
+                "embedding_calls": delta[0],
+                "reranker_calls": delta[1],
+                "top3_count": len(result.recalled_memories),
+            }
+        )
+    timings = [row["seconds"] for row in rows if row["memory_needed"]]
+    return {
+        "scope": "warm index: Need Gate + query embedding + SQLite/cosine + rerank + Top-3; no conversation LLM",
+        "samples": rows,
+        "need_true_average_seconds": float(np.mean(timings)),
+        "need_true_p50_seconds": float(np.percentile(timings, 50)),
+        "need_true_p95_seconds": float(np.percentile(timings, 95)),
+    }
 
 
 def benchmark_setup(path: Path = FIXTURE_PATH) -> dict[str, Any]:
@@ -405,7 +457,7 @@ def render_report(result: dict[str, Any]) -> str:
     sections += [
         "## 5. Latency",
         "",
-        "p50/p95 use linear percentiles; one run, no warmup or retries. Local timings include first model load; API timings include connection setup.",
+        "p50/p95 use linear percentiles; zero retries. First request is process/client-cold, not proven server model cold. Warm excludes first request; embedding first request indexes 32 memories, later payloads differ. Local first call includes lazy model load. Pools are reused, but TCP reuse is not guaranteed by the server.",
         "",
     ]
     for profile in result["profiles"]:
@@ -414,6 +466,7 @@ def render_report(result: dict[str, Any]) -> str:
             "",
             f"Embedding: {profile['embedding_summary']}",
             f"Reranker: {profile['reranker_summary']}",
+            f"End-to-end recall: {profile.get('recall_latency', 'not requested')}",
             "",
         ]
     sections += [

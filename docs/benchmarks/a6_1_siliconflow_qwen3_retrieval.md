@@ -46,6 +46,10 @@ API 计 HTTP 请求（连接、完整 body read）；local 计 encode/score 调�
 
 API-only 单独运行：embedding average/p50/p95 = 2.435581/0.868545/9.222148；reranker = 0.462969/0.468811/0.484509。显示网络计时存在明显运行间变化。
 
+以上是 A6.1 历史数据，不追溯改写。A6.2 审查确认当时每请求新建 HTTP client，计时 transport 也重建池，未区分首/热请求。A6.2 改为 provider/transport 生命周期复用，并增加 `--latency-profile`、first/warm 分组及 production Need Gate E2E 计时；后续证据见 [A6.2 Deployment / Latency Review](../a6_2_api_deployment_profile.md)。不能把不同时间与网络条件的运行直接解释为 pooling 的因果加速倍数。
+
+A6.2 真实运行已完成：embedding first=1.398524s、warm avg/p50/p95=1.884223/0.294326/7.906770s；rerank first=1.421195s、warm=0.298292/0.263338/0.497133s。Need=true E2E avg/p50/p95=2.272002/0.564229/7.540238s（5 次）；Need=false 无 embedding/rerank。48/48 API 请求成功，仍存在尾延迟。新证据明细与 payload/样本限制统一记录在 A6.2 文档，不替换本节历史表格。
+
 ## 6. Token usage / Cost
 
 仅报告 API 实际 usage；缺失保持 null。未配置可靠价格时不估算费用。需要明确价格及全请求 input usage 才估算 input-token cost。

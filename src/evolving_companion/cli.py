@@ -1,6 +1,7 @@
 """Minimal multi-turn terminal chat for SI-001."""
 
 from pathlib import Path
+from contextlib import ExitStack
 from typing import cast
 from uuid import UUID
 
@@ -47,6 +48,11 @@ from evolving_companion.world import WorldEntityService, load_world_seed
 
 def main() -> None:
     """Read messages, print replies, and stop on ``/exit``."""
+    with ExitStack() as resources:
+        _run(resources)
+
+
+def _run(resources: ExitStack) -> None:
     if not load_local_env():
         print(
             "DEEPSEEK_API_KEY is not configured. Set it in the environment or "
@@ -78,7 +84,7 @@ def main() -> None:
         time_service = CharacterTimeService(
             store, seed_data.identity.internal_id, seed_data.timezone, clock
         )
-        embedding_provider, reranker_provider = create_memory_providers()
+        embedding_provider, reranker_provider = create_memory_providers(resources)
         retriever = MemoryRetriever(store, embedding_provider)
         recall_service = MemoryRecallService(
             retriever, MemoryReranker(provider=reranker_provider)

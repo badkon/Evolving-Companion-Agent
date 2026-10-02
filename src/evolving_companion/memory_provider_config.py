@@ -1,6 +1,7 @@
 """Small entry-point-only factory; no import-time environment or model loading."""
 
 import os
+from contextlib import ExitStack
 
 from evolving_companion.embeddings import LocalBGEEmbeddingProvider, MODEL_NAME
 from evolving_companion.memory_providers import (
@@ -19,7 +20,9 @@ def _required(name: str) -> str:
     return value
 
 
-def create_memory_providers() -> tuple[EmbeddingProvider, RerankerProvider]:
+def create_memory_providers(
+    resources: ExitStack | None = None,
+) -> tuple[EmbeddingProvider, RerankerProvider]:
     embedding_kind = os.environ.get("SI_MEMORY_EMBEDDING_PROVIDER", "local")
     reranker_kind = os.environ.get("SI_MEMORY_RERANKER_PROVIDER", "local")
     embedding: EmbeddingProvider
@@ -38,6 +41,8 @@ def create_memory_providers() -> tuple[EmbeddingProvider, RerankerProvider]:
             timeout=float(os.environ.get("SI_MEMORY_API_TIMEOUT", "30")),
             batch_size=int(os.environ.get("SI_MEMORY_EMBEDDING_BATCH_SIZE", "32")),
         )
+        if resources is not None:
+            resources.callback(embedding.close)
     else:
         raise ValueError("SI_MEMORY_EMBEDDING_PROVIDER must be local or api")
     if reranker_kind == "local":
@@ -56,6 +61,8 @@ def create_memory_providers() -> tuple[EmbeddingProvider, RerankerProvider]:
             api_key=_required("SI_MEMORY_RERANKER_API_KEY"),
             timeout=float(os.environ.get("SI_MEMORY_API_TIMEOUT", "30")),
         )
+        if resources is not None:
+            resources.callback(reranker.close)
     else:
         raise ValueError("SI_MEMORY_RERANKER_PROVIDER must be local or api")
     return embedding, reranker

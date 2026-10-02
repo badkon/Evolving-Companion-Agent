@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from contextlib import closing
+from contextlib import closing, ExitStack
 import builtins
 import json
 from pathlib import Path
@@ -47,6 +47,96 @@ class FakeEmbeddingProvider:
 class FakeRerankerProvider:
     def score(self, query: str, texts: Sequence[str]) -> Sequence[float]:
         return [-100.0 + index for index in range(len(texts))]
+
+
+def test_api_client_reused_and_closed_even_after_failure() -> None:
+    class Transport(httpx.MockTransport):
+        closed_count = 0
+
+        def close(self) -> None:
+            self.closed_count += 1
+
+    calls = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        assert request.extensions["timeout"]["read"] == 7
+        if len(calls) == 2:
+            return httpx.Response(503)
+        return httpx.Response(
+            200, json={"results": [{"index": 0, "relevance_score": 1}]}
+        )
+
+    transport = Transport(respond)
+    provider = APIRerankerProvider(
+        endpoint="https://fake.invalid/rerank",
+        api_key="fake",
+        model_id="v1",
+        timeout=7,
+        transport=transport,
+    )
+    with ExitStack() as resources:
+        resources.callback(provider.close)
+        provider.score("q", ["a"])
+        client = provider._client
+        with pytest.raises(MemoryProviderError, match="HTTP 503"):
+            provider.score("q", ["a"])
+        provider.score("q", ["a"])
+        assert provider._client is client
+        assert transport.closed_count == 0
+    assert client is not None and client.is_closed
+    provider.close()
+    assert transport.closed_count == 1
+    with pytest.raises(MemoryProviderError, match="closed"):
+        provider.score("q", ["a"])
+    assert len(calls) == 3
+
+
+def test_factory_registers_api_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in {
+        "SI_MEMORY_EMBEDDING_PROVIDER": "api",
+        "SI_MEMORY_RERANKER_PROVIDER": "api",
+        "SI_MEMORY_EMBEDDING_API_ID": "fake",
+        "SI_MEMORY_EMBEDDING_MODEL": "v1",
+        "SI_MEMORY_EMBEDDING_DIMENSION": "2",
+        "SI_MEMORY_EMBEDDING_API_URL": "https://fake.invalid/embed",
+        "SI_MEMORY_EMBEDDING_API_KEY": "fake",
+        "SI_MEMORY_RERANKER_MODEL": "v1",
+        "SI_MEMORY_RERANKER_API_URL": "https://fake.invalid/rerank",
+        "SI_MEMORY_RERANKER_API_KEY": "fake",
+    }.items():
+        monkeypatch.setenv(name, value)
+    with ExitStack() as resources:
+        embedding, reranker = create_memory_providers(resources)
+        assert isinstance(embedding, APIEmbeddingProvider)
+        assert isinstance(reranker, APIRerankerProvider)
+        assert not embedding._closed and not reranker._closed
+    assert embedding._closed and reranker._closed
+
+
+def test_server_profile_uses_existing_dotenv_key_expansion(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from evolving_companion.local_env import load_local_env
+
+    monkeypatch.setenv("SILICONFLOW_API_KEY", "fake-process-key")
+    monkeypatch.delenv("SI_MEMORY_EMBEDDING_API_KEY", raising=False)
+    monkeypatch.setenv("SI_MEMORY_RERANKER_API_KEY", "fake-explicit-key")
+    env_file = tmp_path / ".env.local"
+    env_file.write_text(
+        "SILICONFLOW_API_KEY=fake-file-key\n"
+        "SI_MEMORY_EMBEDDING_API_KEY=${SILICONFLOW_API_KEY}\n"
+        "SI_MEMORY_RERANKER_API_KEY=${SILICONFLOW_API_KEY}\n",
+        encoding="utf-8",
+    )
+    # Track the temporary loader's mutation so monkeypatch restores the real env.
+    monkeypatch.setenv("SI_MEMORY_EMBEDDING_API_KEY", "")
+    monkeypatch.delenv("SI_MEMORY_EMBEDDING_API_KEY")
+    load_local_env(env_file)
+    import os
+
+    assert os.environ["SI_MEMORY_EMBEDDING_API_KEY"] == "fake-process-key"
+    assert os.environ["SI_MEMORY_RERANKER_API_KEY"] == "fake-explicit-key"
 
 
 def test_local_protocols_are_lazy(monkeypatch: pytest.MonkeyPatch) -> None:

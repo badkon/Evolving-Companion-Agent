@@ -342,7 +342,7 @@ def test_entry_injects_env_config_without_reading_secrets(
     monkeypatch.setenv("SI_ONEBOT_WS_URL", "ws://127.0.0.1:12345/")
     monkeypatch.setenv("SI_ONEBOT_ACCESS_TOKEN", "fake-env-token")
     core = FakeConversation()
-    monkeypatch.setattr(qq_cli, "create_conversation", lambda: core)
+    monkeypatch.setattr(qq_cli, "create_conversation", lambda resources: core)
     captured: dict[str, object] = {}
 
     class FakeTransport:

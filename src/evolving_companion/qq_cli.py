@@ -1,6 +1,7 @@
 """OneBot entry-point wiring; no SnowLuma process management."""
 
 import asyncio
+from contextlib import ExitStack
 import logging
 import os
 from pathlib import Path
@@ -29,7 +30,7 @@ from evolving_companion.storage import SQLiteStore
 from evolving_companion.world import WorldEntityService, load_world_seed
 
 
-def create_conversation() -> Conversation:
+def create_conversation(resources: ExitStack) -> Conversation:
     root = Path(__file__).resolve().parents[2]
     seed = load_character_seed_data(root / "data/characters/si_001.yaml")
     store = SQLiteStore(root / "runtime/si_001.db")
@@ -38,7 +39,7 @@ def create_conversation() -> Conversation:
         load_world_seed(root / "data/worlds/si_world.yaml")
     ):
         logging.getLogger(__name__).warning("World migration: %s", diagnostic)
-    embedding_provider, reranker_provider = create_memory_providers()
+    embedding_provider, reranker_provider = create_memory_providers(resources)
     retriever = MemoryRetriever(store, embedding_provider)
     llm = LLMClient()
     return Conversation(
@@ -64,6 +65,11 @@ def create_conversation() -> Conversation:
 
 
 def main() -> None:
+    with ExitStack() as resources:
+        _run(resources)
+
+
+def _run(resources: ExitStack) -> None:
     logging.basicConfig(level=logging.INFO)
     if not load_local_env():
         print(
@@ -86,7 +92,7 @@ def main() -> None:
         return
     try:
         adapter = QQPrivateChatAdapter(
-            create_conversation(), allowed_user_ids=allowed, bot_user_id=bot_id
+            create_conversation(resources), allowed_user_ids=allowed, bot_user_id=bot_id
         )
         transport = OneBotWebSocketTransport(
             adapter,
