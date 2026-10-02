@@ -1,6 +1,7 @@
 """Offline derived temporal context and its existing observation integration."""
 
 import asyncio
+from collections.abc import Mapping
 from contextlib import closing
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,7 @@ from evolving_companion.clock import FixedClock
 from evolving_companion.conversation import Conversation
 from evolving_companion.embeddings import LocalBGEEmbeddingProvider
 from evolving_companion.llm import LLMClient
+from evolving_companion.memory_formation import MemoryFormationResult
 from evolving_companion.memory_providers import LocalBGERerankerProvider
 from evolving_companion.npc import NPCService
 from evolving_companion.observation import ObservationService, ObservationSnapshot
@@ -319,6 +321,102 @@ def test_conversation_reads_clock_once_and_shares_now_across_all_contexts(
         {"role": "assistant", "content": "好。"},
     )
     assert store.list_active_memories() == ()
+
+
+def test_temporal_failure_drops_combined_context_but_completes_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    seed = load_character_seed_data(ROOT / "data/characters/si_001.yaml")
+    key = seed.identity.internal_id
+    clock = FixedClock(local(21, 59))
+    store = SQLiteStore(tmp_path / "failure.db")
+    world = WorldEntityService(store, clock)
+    world.initialize_seed_entities(load_world_seed(ROOT / "data/worlds/si_world.yaml"))
+    home = world.resolve_place_name("住宅区的家")
+    life = CharacterLifeService(store, key, seed.initial_life_context, clock)
+    life.update_life_context(key, current_location_entity_id=home)
+    temporal = WorldTimeService(seed.timezone, clock)
+    observation = ObservationService(store, clock, world_time_service=temporal)
+
+    class Client:
+        calls: list[list[Message]]
+
+        def __init__(self) -> None:
+            self.calls = []
+
+        def complete(self, messages: list[Message]) -> str:
+            self.calls.append(messages)
+            return "好。"
+
+    class Formation:
+        calls = 0
+
+        def process_turn(
+            self,
+            user_archive_message: Mapping[str, str],
+            assistant_archive_message: Mapping[str, str],
+        ) -> MemoryFormationResult:
+            self.calls += 1
+            assert user_archive_message["role"] == "user"
+            assert assistant_archive_message["role"] == "assistant"
+            return MemoryFormationResult()
+
+    client, formation = Client(), Formation()
+    chat = Conversation(
+        client,
+        CharacterProjector().project(seed),
+        store,
+        character_id=key,
+        character_timezone=seed.timezone,
+        clock=clock,
+        observation_service=observation,
+        memory_formation_service=formation,
+    )
+    chat.send("你好")
+    assert "当前时段：傍晚。" in client.calls[0][0]["content"]
+    before_life = store.get_character_life_context(key)
+
+    def protected_rows() -> tuple[list[tuple], ...]:
+        with closing(sqlite3.connect(store.path)) as connection:
+            return tuple(
+                connection.execute(f"SELECT * FROM {table}").fetchall()
+                for table in (
+                    "character_state",
+                    "memories",
+                    "memory_evidence",
+                    "world_action_results",
+                )
+            )
+
+    before = protected_rows()
+    clock.advance(hours=1)
+
+    def fail(now_utc: datetime | None = None):
+        raise ValueError("private temporal detail")
+
+    monkeypatch.setattr(temporal, "snapshot", fail)
+    assert chat.send("继续") == "好。"
+    assert chat.last_observation_error == "ValueError"
+    prompt = client.calls[-1][0]["content"]
+    for text in (
+        "【当前生活上下文】",
+        "【当前可观察环境】",
+        "当前时段：",
+        "private temporal detail",
+        "ValueError",
+    ):
+        assert text not in prompt
+    assert "private temporal detail" not in caplog.text
+    assert "observation_failed: ValueError" in caplog.text
+    assert protected_rows() == before
+    assert store.get_character_life_context(key) == before_life
+    assert len(chat.history) == 4 and formation.calls == len(client.calls) == 2
+    assert store.get_last_interaction_at(key) == clock.now_utc()
+    with closing(sqlite3.connect(store.path)) as connection:
+        assert (
+            connection.execute("SELECT count(*) FROM archive_messages").fetchone()[0]
+            == 4
+        )
 
 
 def test_eight_hour_offline_context_does_not_assert_lived_experience(

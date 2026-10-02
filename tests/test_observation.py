@@ -2,6 +2,7 @@
 
 import ast
 import asyncio
+from collections.abc import Mapping, Sequence
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,12 @@ from evolving_companion.clock import FixedClock
 from evolving_companion.conversation import Conversation
 from evolving_companion.embeddings import LocalBGEEmbeddingProvider
 from evolving_companion.llm import LLMClient
+from evolving_companion.memory_extraction import (
+    ArchiveChunkMessage,
+    MemoryCandidate,
+    MemoryExtractionResult,
+)
+from evolving_companion.memory_formation import MemoryFormationService
 from evolving_companion.memory_providers import LocalBGERerankerProvider
 from evolving_companion.npc import NPCRecord, NPCService
 from evolving_companion.observation import ObservationService, ObservationSnapshot
@@ -268,6 +275,78 @@ def test_each_turn_refreshes_and_snapshot_is_not_history(env: Environment) -> No
     assert '当前地点："学校"' not in second and "1位匿名人物" not in second
     assert len(client.calls) == 2 and len(chat.history) == 4
     assert all("【当前可观察环境】" not in item["content"] for item in chat.history)
+
+
+def test_assistant_environment_restatement_uses_real_archive_formation_boundary(
+    env: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    school = set_place(env, "学校")
+    env.npc.create("测试甲", place_entity_id=school)
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("Observation must not write Archive, Memory or Evidence")
+
+    # Capture and Prompt are read-only; no synthetic Archive/evidence is created.
+    with monkeypatch.context() as patch:
+        for name in ("append_archive_message", "create_memory", "add_evidence"):
+            patch.setattr(env.store, name, forbidden)
+        life, snapshot = env.observation.capture_context(env.key)
+        builder().build(
+            [], "这里是什么地方？", character_life_context=life, observation=snapshot
+        )
+
+    seen: list[ArchiveChunkMessage] = []
+
+    class Extractor:
+        def extract_memories(
+            self, messages: Sequence[ArchiveChunkMessage | Mapping[str, str]]
+        ) -> MemoryExtractionResult:
+            chunk = [
+                ArchiveChunkMessage.model_validate(message) for message in messages
+            ]
+            seen.extend(chunk)
+            return MemoryExtractionResult(
+                candidates=[
+                    MemoryCandidate(
+                        content="当前观察到学校里有一位匿名人物。",
+                        memory_type="semantic",
+                        source="observed",
+                        salience="low",
+                        decision="reject",
+                        evidence_refs=[chunk[1].id],
+                        reason="普通环境复述，不是有长期意义的亲历或用户事实。",
+                    )
+                ]
+            )
+
+    class Client:
+        def complete(self, messages: list[Message]) -> str:
+            assert '当前地点："学校"' in messages[0]["content"]
+            return "这里是学校，当前能看到一位人物。"
+
+    chat = Conversation(
+        Client(),
+        builder().character_context,
+        env.store,
+        character_id=env.key,
+        clock=env.clock,
+        observation_service=env.observation,
+        memory_formation_service=MemoryFormationService(Extractor(), env.store),
+    )
+    assert chat.send("这里是什么地方？") == "这里是学校，当前能看到一位人物。"
+    assert [message.role for message in seen] == ["user", "assistant"]
+    with closing(sqlite3.connect(env.store.path)) as connection:
+        rows = connection.execute(
+            "SELECT id, role, content FROM archive_messages"
+        ).fetchall()
+        assert rows == [(message.id, message.role, message.content) for message in seen]
+        assert (
+            connection.execute("SELECT count(*) FROM memory_evidence").fetchone()[0]
+            == 0
+        )
+    assert env.store.list_active_memories() == ()
+    assert chat.last_memory_formation_result is not None
+    assert chat.last_memory_formation_result.rejected_count == 1
 
 
 def test_failure_drops_both_contexts_without_stale_fallback(

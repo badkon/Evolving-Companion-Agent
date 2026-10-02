@@ -114,7 +114,7 @@ Archive user message 先于 recall 与模型调用写入；模型失败时 user 
 8. 没有 memory confidence model；`salience` 不能替代置信度。
 9. Recent conversation history 仍可能包含已 supersede 的旧事实；即使长期 recall 只返回 active Memory，短期历史仍可能使模型提到旧状态。
 10. 时间语义尚不成熟；“刚说过”“以前”“最近”等关系主要交由当前语言模型依据上下文表达，没有独立的 temporal grounding。
-11. Recall 之前的检索/重排错误会中断本轮对话；当前没有与 formation 相同的 best-effort 隔离。
+11. 历史限制（A3 冻结时）：Recall 之前的检索/重排错误会中断本轮对话，当时没有与 formation 相同的 best-effort 隔离。此限制已被后续 A6.3 supersede：当前 recall infrastructure failure 降级为本轮 no-memory context，主 LLM 继续；详见 [当前 Availability Policy](a6_2_api_deployment_profile.md#7-failure-semantics)。保留原阶段事实，不代表当前仍有此行为。
 12. 现有人工 smoke 与 benchmark 输出没有作为可复现的正式评测报告/数值基线完整保存在仓库中；本节只保留定性结论与验证边界。
 
 ## 10. Deferred Work

@@ -50,7 +50,9 @@ class NPCStore(Protocol):
     def get_npc(self, npc_id: UUID) -> NPCRecord | None: ...
     def list_active_npcs(self) -> tuple[NPCRecord, ...]: ...
     def insert_npc(self, npc: NPCRecord) -> None: ...
-    def update_npc(self, npc: NPCRecord) -> None: ...
+    def patch_npc(
+        self, npc_id: UUID, changes: dict[str, object], now: datetime
+    ) -> NPCRecord: ...
 
 
 class _Unchanged(Enum):
@@ -109,10 +111,7 @@ class NPCService:
         tags: tuple[str, ...] | _Unchanged = UNCHANGED,
         short_description: str | None | _Unchanged = UNCHANGED,
     ) -> NPCRecord:
-        current = self.get(npc_id)
-        if current is None:
-            raise KeyError("NPC does not exist")
-        values = current.model_dump()
+        values: dict[str, object] = {}
         for name, value in (
             ("canonical_name", canonical_name),
             ("display_name", display_name),
@@ -123,16 +122,7 @@ class NPCService:
         ):
             if value is not UNCHANGED:
                 values[name] = value
-        candidate = NPCRecord.model_validate(values)
-        if candidate == current:
-            return current
-        now = self._clock.now_utc()
-        if now < current.updated_at:
-            raise ValueError("clock_moved_backwards; NPC update not applied")
-        values["updated_at"] = now
-        updated = NPCRecord.model_validate(values)
-        self._store.update_npc(updated)
-        return updated
+        return self._store.patch_npc(npc_id, values, self._clock.now_utc())
 
     def set_location(self, npc_id: UUID, place_entity_id: UUID | None) -> NPCRecord:
         return self.update(npc_id, place_entity_id=place_entity_id)

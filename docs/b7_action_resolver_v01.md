@@ -54,6 +54,8 @@ Resolver 构造绑定 Store、Character internal UUID、Clock，API 为 resolve(
 
 重启仍读取数据库回执。action_id 是持久化幂等键，不是仅内存去重。回执查询失败不会用 None 假装没有记录；get_result 抛出安全的 action_result_lookup_failed，None 只代表记录不存在。
 
+WF-R03：幂等范围是当前数据库保留的 receipt history，不是跨任意 backup restore 的永久去重。恢复到动作之前的完整备份会同时回退 Life 与回执；再次提交相同 action_id 时，若回执已不存在，按恢复后的 Life 重新 resolve，replayed=false。正式离线测试覆盖这个边界；没有数据库外的 receipt store。
+
 ## 9. Action Receipt
 
 新增 `world_action_results` 表：action_id TEXT PRIMARY KEY、character_id、action_type、destination_entity_id、expected_location_entity_id（nullable）、status、reason、location_before/after（nullable）、resolved_at UTC ISO 8601。UUID 在 Python 层验证后存为文本。
@@ -69,6 +71,8 @@ A：home → school 成功；B：school → home 成功；随后重放 A。返�
 CharacterLifeService 不再把更新前读取的整行写回。普通更新将显式字段验证为 LifeContextData，再由 Store 在同一 BEGIN IMMEDIATE 中读取最新行、校验引用、仅 patch 调用方指定字段与 updated_at。省略保持原值，显式 None 清空；no-op 不写、不刷新时间，UTC 与 rollback 边界保持。
 
 首次初始化单独在写事务内检查缺失，只在仍缺失时插入；并发出现的 runtime 行优先，seed 不覆盖它。已有低层完整行 upsert 不用于 Service 的初始化/普通更新或 Resolver；运行路径使用 insert-if-missing / partial patch。
+
+WF-R04：保留 `upsert_character_life_context` 作为低层完整替换 API，但禁止用 stale snapshot 做普通部分更新。运行路径回归测试禁止调用它；不是新的迁移或持久化框架。
 
 确定性交错测试复现旧读 location=home → 另一连接 move 到 school → 原调用方只修改 role，验证 role 与 school 均保留。不依赖 sleep 猜竞态；双连接同 action_id 测试使用 Barrier。
 

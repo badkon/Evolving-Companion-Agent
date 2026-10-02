@@ -66,6 +66,53 @@ def test_create_get_identity_active_and_restart(tmp_path: Path) -> None:
         store.insert_npc(first)
 
 
+@pytest.mark.parametrize("other_field", ["location", "active", "tags"])
+def test_patch_preserves_interleaved_writer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, other_field: str
+) -> None:
+    path = tmp_path / "interleaved.db"
+    store, clock, world, service = setup_registry(path)
+    home = world.resolve_place_name("住宅区的家")
+    school = world.resolve_place_name("学校")
+    npc = service.create("测试", display_name="旧名", place_entity_id=home)
+    other = NPCService(SQLiteStore(path), clock)
+    original_patch = store.patch_npc
+    clock.advance(hours=1)
+
+    def interleave(
+        npc_id: UUID, changes: dict[str, object], now: datetime
+    ) -> NPCRecord:
+        # Deterministic second writer before this writer acquires its transaction.
+        if other_field == "location":
+            other.set_location(npc_id, school)
+        elif other_field == "active":
+            other.set_active(npc_id, False)
+        else:
+            other.update(npc_id, tags=("new",))
+        return original_patch(npc_id, changes, now)
+
+    monkeypatch.setattr(store, "patch_npc", interleave)
+    changed = service.update(npc.npc_id, display_name="新名")
+    assert changed == other.get(npc.npc_id)
+    assert changed.display_name == "新名"
+    assert changed.place_entity_id == (school if other_field == "location" else home)
+    assert changed.active == (other_field != "active")
+    assert changed.tags == (("new",) if other_field == "tags" else ())
+    assert changed.npc_id == npc.npc_id and changed.created_at == npc.created_at
+    assert changed.updated_at == clock.now_utc()
+
+
+def test_invalid_patch_rolls_back_and_identity_is_not_patchable(tmp_path: Path) -> None:
+    store, clock, _, service = setup_registry(tmp_path / "rollback.db")
+    npc = service.create("测试")
+    clock.advance(hours=1)
+    with pytest.raises(ValidationError):
+        store.patch_npc(npc.npc_id, {"canonical_name": ""}, clock.now_utc())
+    with pytest.raises(ValueError, match="Unsupported"):
+        store.patch_npc(npc.npc_id, {"npc_id": UUID(int=1)}, clock.now_utc())
+    assert service.get(npc.npc_id) == npc
+
+
 def test_explicit_location_and_partial_updates(tmp_path: Path) -> None:
     store, clock, world, service = setup_registry(tmp_path / "npc.db")
     school = world.resolve_place_name("学校")
@@ -92,9 +139,10 @@ def test_explicit_location_and_partial_updates(tmp_path: Path) -> None:
     )
     assert cleared.place_entity_id is None
     assert cleared.tags == ("test",)
-    assert service.update(
-        npc.npc_id, display_name=None, short_description=None
-    ).tags == ("test",)
+    cleared_text = service.update(npc.npc_id, display_name=None, short_description=None)
+    assert cleared_text.display_name is None
+    assert cleared_text.short_description is None
+    assert cleared_text.tags == ("test",)
     assert world.list_entities() == places
     assert store.list_active_memories() == ()
     with pytest.raises(KeyError):

@@ -23,7 +23,7 @@ World
 SI-001 Character Core
         X 不直接读取全部 NPC
 
-Future only:
+Future at B5 delivery (now separately implemented by B6/B7):
 World → Observation Layer → SI-001
 SI-001 intention → Action Resolver → World
 ```
@@ -47,7 +47,9 @@ NPCRecord 为冻结、拒绝额外字段的 Pydantic 模型：
 
 ## 5. Persistence
 
-独立 `world_npcs` 表不改变 B4 的 place-only `world_entities`。SQLiteStore 提供 get_npc、list_active_npcs、insert_npc、update_npc；NPCService 提供 get、list_active、create、update、set_location、set_active。不增设 repository hierarchy、history 或 event 表。
+独立 `world_npcs` 表不改变 B4 的 place-only `world_entities`。SQLiteStore 提供 get_npc、list_active_npcs、insert_npc、patch_npc；NPCService 提供 get、list_active、create、update、set_location、set_active。不增设 repository hierarchy、history 或 event 表。
+
+Closure 修复 WF-R01：普通更新由 Store 在单个 `BEGIN IMMEDIATE` 短事务内读取最新 NPC、验证合并结果、仅写显式字段与实际变化时的 updated_at，再提交。省略字段保留最新数据库值，不把过期整行写回；UUID/created_at 不可 patch。无变化不写；校验、Place 引用或写入失败回滚。事务内不调用模型或后台工作。既有低层 update_npc 完整写入方法保留，但不用于 NPCService 普通更新。
 
 只由显式调用创建和修改；服务构造、读取、重启和 Clock 推进不初始化 NPC 或覆盖 runtime。update 省略字段不变，None 清空可空值，no-op 不写入或刷新 updated_at；真实变化更新时间，created_at 和 UUID 不变。时钟倒退的变化请求明确拒绝并保留原记录。active=false 不物理删除，get 仍可读并可显式重新激活。更新不存在 ID 报错，不隐式创建。
 
@@ -67,7 +69,7 @@ World Truth ≠ Character Knowledge ≠ Character Observation ≠ Character Memo
 
 ## 9. No LLM
 
-没有 NPC Client、system prompt、对话历史或模型调用。Conversation、CLI、QQ、Manager 和 Setup 均未接入 NPC；原 Character 对话行为不改。
+没有 NPC Client、system prompt、对话历史或模型调用。B5 交付时 Conversation、CLI、QQ、Manager 和 Setup 均未接入 NPC；之后 B6 已通过只读 Observation 向 Conversation 投影有限匿名存在信息，并非 NPC 对话或认知系统。
 
 ## 10. No Memory
 
@@ -79,11 +81,13 @@ World Truth ≠ Character Knowledge ≠ Character Observation ≠ Character Memo
 
 ## 12. Future Observation Layer
 
-未来 Observation Layer 决定玲有依据观察到谁；尚未实现。B5 不枚举并注入全部 active NPC，不向 Prompt 投影名称、位置或描述，也不赋予全知视角。
+“Observation 尚未实现”是 B5 交付时的历史状态；当前 [B6 Observation](b6_observation_layer_v01.md) 已提供同 Place + active 的有限匿名线索。B5 Registry 本身不枚举并注入全部 active NPC，不向 Prompt 投影名称、位置或描述，也不赋予全知视角。
 
 ## 13. Future Action Resolver
 
 当前 set_location 是开发者/系统显式数据接口，不是角色行动。未来意图 → Action Resolver → World Mutation 的边界需单独设计；Character / NPC 不应直接操纵 World DB。本版不实现 Action、Resolver 或自动调用。
+
+上述为 B5 历史范围；当前 [B7 Resolver](b7_action_resolver_v01.md) 已另行实现 SI-001 的受信任显式 move_to，不自动驱动 NPC。
 
 ## 14. Future Important NPC Tier
 
@@ -91,6 +95,6 @@ World Truth ≠ Character Knowledge ≠ Character Observation ≠ Character Memo
 
 ## 15. Known Limitations
 
-无正式人物 seed、观察、对话、自主行为、社会网络、关系演化、角色生成、背景工作或调试 UI。Registry 是当前快照，不保留位置历史或完整 World event。标签与描述不自动成为 Character Context；未来读取权限、重要 NPC 及世界模拟不由本阶段扩展。
+B5 Registry 本身无正式人物 seed、观察、对话、自主行为、社会网络、关系演化、角色生成、背景工作或调试 UI；当前有限观察由 B6 承担。Registry 是当前快照，不保留位置历史或完整 World event。标签与描述不自动成为 Character Context；未来读取权限、重要 NPC 及世界模拟不由本阶段扩展。
 
 验证入口：`python scripts/run_npc_registry_smoke.py`，仅临时 SQLite + FixedClock + 现有地点 seed；创建 synthetic NPC、到校、移到住宅区、停用、重开 Store、确认持久化与临时目录删除。pytest 离线覆盖 UUID、校验、位置、UTC/no-op/重启及 Prompt/State/Life/Memory/Place 和资源边界，不下载模型或调用 API。

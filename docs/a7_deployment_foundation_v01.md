@@ -112,6 +112,8 @@ sudo systemctl start si.service
 CLI 必须显式 backup path；查询 systemd 确认 inactive/failed（命令不可用或未知状态时拒绝），验证源/目标 SQLite 及已有 State/Time/Life Character UUID 集合一致，然后先生成 pre_restore_YYYYMMDD_HHMMSS.db，再通过 SQLite backup API 写入目标。目标现有 DB 必须有效，拒绝隐式创建/无保护覆盖；不自动启动服务。缺少 Character-owned UUID 的早期 DB 无法靠此检查识别归属；必须由维护者确认来源。可复用 Python API 要求调用方确认 service_stopped=True。维护者也须关闭其他 CLI/DB writer，systemd 状态不是跨进程锁。
 本版新服务器迁移：服务保持停止，把已完成且验证过的 snapshot 安全传输到 runtime/si_001.db，调整 si owner/0600，再 check；不要复制运行中 DB。已有 DB 的恢复必须走带 pre-restore 保护的 restore。无自动 rollback/retention。
 
+World Foundation WF-R03：完整 SQLite 备份/恢复包含 NPC Registry、Life 和 B7 action receipts。恢复旧 snapshot 会回退 receipt history；同 action_id 的幂等只覆盖当前 DB 保留的回执，不是跨恢复的永久去重。若恢复到动作之前，该 action_id 可以按恢复后的 Life 再次执行（replayed=false）。没有数据库外的去重记录。
+
 ## 16. Update
 
 停止服务 → backup → 明确更新 app 代码 ref → uv sync --locked --no-dev --no-extra local-memory --python 3.12 → deploy_check → start → health/status。git 操作仅限 app，不碰 config/runtime/backups。先处理 dirty checkout，不强制 reset/clean。

@@ -76,6 +76,8 @@ user Archive、主 LLM、assistant Archive 失败仍遵循原有完成边界。l
 
 **Memory evidence 限制：** 玲可能在 assistant response 提及观察信息，既有 A3 Formation 随后可能处理这段 assistant Archive。它仍只是 Conversation evidence，不等于原始 World Fact 已获得完整 Memory evidence 支持。B6 不宣称解决此问题，也没有添加自动 World Memory 流程。
 
+Closure WF-R02 回归覆盖 Observation → Prompt → assistant 环境复述 → 真实 Archive → A3 Formation。受控 fake extractor 拒绝普通环境复述；仅使用真实 user/assistant Archive ID，不伪造 Archive、不把 Observation 当 evidence（本阶段无 Observation ID）。B6 capture/Prompt 不写 Memory/Evidence。这个测试证明集成路径与直接写入边界，不证明真实模型永久不会误抽取或混淆来源；间接语义 provenance 限制仍接受并保留。
+
 离线 pytest 使用临时 SQLite、FixedClock、fake LLM，覆盖位置过滤、匿名/转义、截断、逐轮刷新、一致读事务、故障降级、无写入与资源边界。`python scripts/run_observation_smoke.py` 使用 synthetic NPC 检查地点 A/B 切换及匿名 Prompt，退出后删除临时 DB/目录。没有访问真实 runtime DB、QQ、API 或模型下载；不是自然语言生成质量的真实模型验证。
 
 ## 14. Future Experience Layer

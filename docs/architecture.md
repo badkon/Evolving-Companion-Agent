@@ -21,6 +21,8 @@ A6.0：Memory → EmbeddingProvider → Semantic Retrieval → RerankerProvider 
 
 ## 1. 核心分层
 
+[World Foundation v0.1 Closure](world_foundation_v01_closure.md) 冻结 B4 Places、B5 static NPC、B6 Observation、B7 typed move_to/Resolver 与 B8 Lazy World Time。NPC 普通更新在单个 SQLite 写事务读取最新行，只 patch 显式字段；Life 普通写入使用 initialize-if-missing / transactional partial patch，禁止用低层 full upsert 写回 stale snapshot。B7 幂等仅限当前 DB 保留的 receipt history，旧备份恢复可能移除回执。Observation 的 assistant Archive 复述仍不是完整 World evidence；不引入新来源或自动经历系统。
+
 A7.2 `si setup` / Manager Reconfigure 共用 SetupScreen → SetupService → DeploymentEnvService 与 A7 deploy_check、A7.1 SystemdServiceManager。只写白名单部署配置，masked key 默认保留、private backup/atomic replace、未知字段保留，路径/identity 只读；无 Character reset、DB schema/运行逻辑改变。离线检查在新本地进程复用现有入口，避开旧 file-derived 环境。Transport None 可以保存但不启动服务。详见 [A7.2 Setup](a7_2_first_run_setup_v01.md)。
 
 A7.1 仅增加 Deployment/Operations UI：`si` → Textual SIManagerApp → DeploymentFacade / SystemdServiceManager → A7 helpers / systemd。配置只读白名单，secret 仅配置状态；恢复须确认并复用 A7 stopped/UUID/pre_restore 保护。阻塞操作经 worker thread，全部离线，不进入 Character Core、Prompt、Memory 或 transport 链。详见 [A7.1 SI Manager](a7_1_si_manager_tui_v01.md)。

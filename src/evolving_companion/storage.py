@@ -324,6 +324,65 @@ class SQLiteStore:
                 self._npc_values(npc),
             )
 
+    def patch_npc(
+        self, npc_id: UUID, changes: dict[str, object], now: datetime
+    ) -> NPCRecord:
+        """Read and patch the latest row under one writer transaction."""
+        allowed = {
+            "canonical_name",
+            "display_name",
+            "place_entity_id",
+            "active",
+            "tags",
+            "short_description",
+        }
+        if changes.keys() - allowed:
+            raise ValueError("Unsupported NPC patch fields")
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM world_npcs WHERE npc_id = ?", (str(npc_id),)
+            ).fetchone()
+            if row is None:
+                raise KeyError("NPC does not exist")
+            current = self._npc_from_row(row)
+            values = current.model_dump() | changes
+            candidate = NPCRecord.model_validate(values)
+            if candidate == current:
+                return current
+            values["updated_at"] = now
+            updated = NPCRecord.model_validate(values)
+            if updated.updated_at < current.updated_at:
+                raise ValueError("clock_moved_backwards; NPC update not applied")
+            encoded = dict(
+                zip(
+                    (
+                        "canonical_name",
+                        "display_name",
+                        "place_entity_id",
+                        "active",
+                        "tags",
+                        "short_description",
+                    ),
+                    self._npc_values(updated)[:6],
+                    strict=True,
+                )
+            )
+            columns = tuple(changes)
+            result = connection.execute(
+                "UPDATE world_npcs SET "
+                + ", ".join(f"{name} = ?" for name in columns)
+                + ", updated_at = ? WHERE npc_id = ?",
+                (
+                    *[encoded[name] for name in columns],
+                    updated.updated_at.isoformat(),
+                    str(npc_id),
+                ),
+            )
+            if result.rowcount != 1:
+                raise RuntimeError("NPC patch was not applied")
+            return updated
+
     def update_npc(self, npc: NPCRecord) -> None:
         with closing(self._connect()) as connection, connection:
             updated = connection.execute(
@@ -762,6 +821,11 @@ class SQLiteStore:
             return projected, snapshot
 
     def upsert_character_life_context(self, context: CharacterLifeContext) -> None:
+        """Low-level full replacement, not an ordinary runtime partial update.
+
+        Never pass a stale snapshot here to change one field. Runtime Life writes
+        use initialize-if-missing or the transactional partial patch API.
+        """
         with closing(self._connect()) as connection, connection:
             connection.execute(
                 """INSERT INTO character_life_context

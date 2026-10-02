@@ -43,6 +43,8 @@ ObservationService 可接收 WorldTimeService，复用 capture_context 的同一
 
 沿用 `【当前可观察环境】`，只增加简短时段和边界说明，不新增世界时间区块、不重复 B1 日期/精确时间，不投影 UTC、时区 metadata 或 schema 字段。未知位置仍可提供时段，但不推断地点、周围人物或活动。未配置该服务时 B6 原投影保持不变；查询失败继续省略本轮组合上下文，不用旧快照。
 
+Closure 专项回归：已有成功快照后 WorldTimeService.snapshot 抛异常，本轮 Life/Observation 组合块全部省略，不复用旧时段、不伪造新时段；主 LLM/Archive/history 与成功后的既有时间记录、formation 继续。诊断和日志仅含异常类型，不含异常文本。B8 失败不额外修改 State、Memory、Action 或 Life；未改变既有 failure boundary。
+
 ## 8. Conversation Time Consistency
 
 Conversation.send 读取一次 Clock。B1 Snapshot、B2 reconciliation、B6 observed_at、B8 Snapshot 使用同一个 now_utc，避免 21:59 / 22:00 跨边界矛盾。WorldTimeService 在该轮不再取时。

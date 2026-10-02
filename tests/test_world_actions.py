@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import ValidationError
 
+from evolving_companion.backup import backup_database
 from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.character_life import (
     CharacterLifeContext,
@@ -30,6 +31,7 @@ from evolving_companion.memory_providers import LocalBGERerankerProvider
 from evolving_companion.npc import NPCService
 from evolving_companion.observation import ObservationService
 from evolving_companion.prompting import Message
+from evolving_companion.restore import restore_database
 from evolving_companion.storage import SQLiteStore
 from evolving_companion.world import WorldEntityService, load_world_seed
 from evolving_companion.world_actions import ActionResolver, ActionResult, MoveToIntent
@@ -86,6 +88,42 @@ def receipt_count(env: Environment) -> int:
         return connection.execute(
             "SELECT count(*) FROM world_action_results"
         ).fetchone()[0]
+
+
+def test_restore_before_action_removes_receipt_and_resolves_again(
+    env: Environment, tmp_path: Path
+) -> None:
+    backup = backup_database(env.store.path, tmp_path / "backups")
+    action = intent(env, env.school, env.home)
+    first = env.resolver.resolve(action)
+    assert first.status == "success" and not first.replayed
+    assert (
+        receipt_count(env) == 1
+        and current(env).current_location_entity_id == env.school
+    )
+    restore_database(backup, env.store.path, tmp_path / "backups", service_stopped=True)
+    assert (
+        receipt_count(env) == 0 and current(env).current_location_entity_id == env.home
+    )
+    env.clock.advance(hours=1)
+    second = env.resolver.resolve(action)
+    assert second.status == "success" and not second.replayed
+    assert current(env).current_location_entity_id == env.school
+    assert current(env).updated_at == env.clock.now_utc()
+    assert env.resolver.resolve(action).replayed
+
+
+def test_runtime_life_writes_do_not_use_full_upsert(
+    env: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("Runtime Life must not use full snapshot upsert")
+
+    monkeypatch.setattr(env.store, "upsert_character_life_context", forbidden)
+    env.life.get_life_context(env.key)
+    env.life.update_life_context(env.key, current_role="测试角色")
+    assert env.resolver.resolve(intent(env, env.school, env.home)).status == "success"
+    assert current(env).current_role == "测试角色"
 
 
 def test_move_changes_only_location_and_timestamp_and_persists_receipt(
