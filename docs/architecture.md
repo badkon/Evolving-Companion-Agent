@@ -85,6 +85,8 @@ B3 的独立路径：Character Life Context → Prompt Context → PromptBuilder
 
 B4：World Seed → World Entity Store → World Entity Service → Character Life Context UUID references → Prompt Projection。Place 使用固定 World UUID，与 Character internal UUID 分离；canonical_name 可重名，仅精确唯一结果可解析。Life 的四个地点字段已改为 `*_entity_id`，启动时先初始化 World 再迁移旧 Life 字符串；未知值不猜测，旧文本保留在兼容列，新引用为空并返回诊断。World Truth ≠ Character Knowledge，description 和 parent 不自动投影。详见 [B4 World State](b4_world_state_v01.md)。
 
+B5 增加独立 `world_npcs` 静态 Registry：NPCRecord → NPCService → SQLiteStore，仅显式创建/更新、读取 active 记录及 Place UUID 关联。Full Character 当前只有 SI-001；普通 NPC 是 Tier-0 lightweight World data，不是 Agent，无 LLM、Memory、模型、后台循环或自动移动。正式 NPC 初始化为 0，不虚构人物。World Truth ≠ Character Knowledge ≠ Character Observation；NPC 不自动进入 Prompt。未来 World → Observation Layer → SI-001、intention → Action Resolver → World 仅是边界方向，未实现。详见 [B5 Lightweight NPC Registry](b5_lightweight_npc_registry_v01.md)。
+
 B2 复用 `apply_elapsed_time()`，依据 State 中四个独立 UTC 字段锚点进行 baseline reconciliation。`updated_at` 表示整行最后实际变化时间；无变化检查不刷新任何锚点，其他字段变化不重置未变字段的累计时间。SQLite 兼容初始化为旧行增加并回填四个锚点列。Offline Duration 使用 last interaction，State elapsed 使用各字段锚点，二者独立。活动保留，不生成离线经历。详见 [B2 Temporal State Reconciliation](b2_temporal_state_reconciliation_v01.md)。
 
 其中：
@@ -143,6 +145,8 @@ Runtime Data 不进入 Git。
 B3 增加 `character_life_context`，每个 Internal UUID 一行当前生活上下文，不新增 history 表。读取和显式更新不创建 Memory，也不修改 Character State；普通 Prompt 不包含 UUID、时间戳或数据库字段名。
 
 B4 新增 `world_entities`，parent 与 Life 的地点 UUID 使用 FK。Seed 插入只补充缺失 ID，不覆盖 runtime；当前没有动态 World State、world event history 或自动移动。
+
+B5 新增 `world_npcs`，稳定 NPC UUID 主键、可空 Place FK、active 与基础资料。SQLite 地点检查要求引用存在且为 place，名称不是 identity；no-op 不刷新 updated_at，停用保留记录。没有 NPC history、Memory 或 scheduler，不修改 Character-owned 表的语义。
 
 上层模块不应直接依赖具体数据库实现，应通过统一的数据访问边界访问 Character State。
 

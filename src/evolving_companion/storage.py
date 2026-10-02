@@ -1,6 +1,7 @@
 """SQLite archive and explicit memory storage for the current Character."""
 
 import sqlite3
+import json
 import os
 import unicodedata
 from collections.abc import Sequence
@@ -13,6 +14,7 @@ from uuid import UUID, uuid4
 from evolving_companion.character_state import CharacterState, TEMPORAL_ANCHORS
 from evolving_companion.character_life import CharacterLifeContext
 from evolving_companion.world import WorldEntity
+from evolving_companion.npc import NPCRecord
 
 MEMORY_TYPES = frozenset({"episodic", "semantic", "self", "relationship"})
 MEMORY_SOURCES = frozenset({"explicit", "observed", "inferred"})
@@ -98,6 +100,38 @@ CREATE TABLE IF NOT EXISTS world_entities (
     updated_at TEXT NOT NULL,
     CHECK (parent_entity_id IS NULL OR parent_entity_id <> entity_id)
 );
+
+CREATE TABLE IF NOT EXISTS world_npcs (
+    npc_id TEXT PRIMARY KEY NOT NULL,
+    canonical_name TEXT NOT NULL CHECK (length(trim(canonical_name)) > 0),
+    display_name TEXT,
+    place_entity_id TEXT REFERENCES world_entities(entity_id),
+    active INTEGER NOT NULL CHECK (active IN (0, 1)),
+    tags TEXT NOT NULL,
+    short_description TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS world_npcs_active ON world_npcs(active);
+CREATE INDEX IF NOT EXISTS world_npcs_place ON world_npcs(place_entity_id);
+CREATE TRIGGER IF NOT EXISTS world_npcs_insert_place
+BEFORE INSERT ON world_npcs
+WHEN NEW.place_entity_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM world_entities
+    WHERE entity_id = NEW.place_entity_id AND entity_type = 'place'
+)
+BEGIN
+    SELECT RAISE(ABORT, 'NPC location must reference an existing Place');
+END;
+CREATE TRIGGER IF NOT EXISTS world_npcs_update_place
+BEFORE UPDATE OF place_entity_id ON world_npcs
+WHEN NEW.place_entity_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM world_entities
+    WHERE entity_id = NEW.place_entity_id AND entity_type = 'place'
+)
+BEGIN
+    SELECT RAISE(ABORT, 'NPC location must reference an existing Place');
+END;
 
 CREATE TABLE IF NOT EXISTS character_life_context (
     character_id TEXT PRIMARY KEY,
@@ -222,6 +256,65 @@ class SQLiteStore:
                         "ALTER TABLE character_life_context ADD COLUMN "
                         "world_references_migrated INTEGER NOT NULL DEFAULT 0"
                     )
+
+    @staticmethod
+    def _npc_from_row(row: sqlite3.Row) -> NPCRecord:
+        values = dict(row)
+        values["tags"] = json.loads(values["tags"])
+        return NPCRecord.model_validate(values)
+
+    def get_npc(self, npc_id: UUID) -> NPCRecord | None:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM world_npcs WHERE npc_id = ?", (str(npc_id),)
+            ).fetchone()
+        return self._npc_from_row(row) if row is not None else None
+
+    def list_active_npcs(self) -> tuple[NPCRecord, ...]:
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT * FROM world_npcs WHERE active = 1 ORDER BY canonical_name, npc_id"
+            ).fetchall()
+        return tuple(self._npc_from_row(row) for row in rows)
+
+    @staticmethod
+    def _npc_values(npc: NPCRecord) -> tuple[object, ...]:
+        return (
+            npc.canonical_name,
+            npc.display_name,
+            str(npc.place_entity_id) if npc.place_entity_id is not None else None,
+            int(npc.active),
+            json.dumps(npc.tags, ensure_ascii=False),
+            npc.short_description,
+            npc.created_at.isoformat(),
+            npc.updated_at.isoformat(),
+            str(npc.npc_id),
+        )
+
+    def insert_npc(self, npc: NPCRecord) -> None:
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """INSERT INTO world_npcs
+                   (canonical_name, display_name, place_entity_id, active, tags,
+                    short_description, created_at, updated_at, npc_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                self._npc_values(npc),
+            )
+
+    def update_npc(self, npc: NPCRecord) -> None:
+        with closing(self._connect()) as connection, connection:
+            updated = connection.execute(
+                """UPDATE world_npcs SET canonical_name = ?, display_name = ?,
+                   place_entity_id = ?, active = ?, tags = ?, short_description = ?,
+                   updated_at = ? WHERE npc_id = ?""",
+                (
+                    *self._npc_values(npc)[:6],
+                    npc.updated_at.isoformat(),
+                    str(npc.npc_id),
+                ),
+            )
+            if updated.rowcount != 1:
+                raise KeyError("NPC does not exist")
 
     def get_world_entity(self, entity_id: UUID) -> WorldEntity | None:
         with closing(self._connect()) as connection:

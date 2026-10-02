@@ -26,6 +26,8 @@ B3 增加独立持久化的 Personal Life Context，按 Internal UUID 绑定。�
 
 B4 建立最小静态 World Place 层，固定 UUID seed 初始化到 SQLite；Life 的地点关联改为 World UUID，并兼容迁移 B3 旧字符串。Prompt 只解析相关地点名称，不自动获得 World description 或亲历记忆。详见 [B4 World State](docs/b4_world_state_v01.md)。未实现动态世界模拟。
 
+B5 增加 [Lightweight NPC Registry](docs/b5_lightweight_npc_registry_v01.md)：独立 SQLite 静态记录、稳定 UUID、显式 Place 关联和 active 标记。正式 NPC 初始为 0；只有 SI-001 是完整 Character，NPC 无 LLM、Memory、后台任务或自动 Prompt 注入。离线检查：`python scripts/run_npc_registry_smoke.py`。
+
 ## 开发环境
 
 Linux 服务器完成 A7 安装并将 `/opt/si/app/.venv/bin` 加入 PATH 后，运行 `si setup` 安全配置 DeepSeek/SiliconFlow keys、API-only Memory 与 QQ/None；密钥输入 masked，不需要手工 export API key。Review 确认后原子保存配置、离线检查，再可选启动服务；之后运行 `si` 日常运维。详见 [First-run Setup](docs/a7_2_first_run_setup_v01.md)。离线 smoke：`python scripts/run_setup_smoke.py`。
