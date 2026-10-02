@@ -30,6 +30,8 @@ B5 增加 [Lightweight NPC Registry](docs/b5_lightweight_npc_registry_v01.md)：
 
 B6 增加 [Observation Layer](docs/b6_observation_layer_v01.md)：CLI / QQ 每轮在同一只读事务中捕获 Life 与当前 Place 的 active NPC 引用，独立 Prompt 区块仅提供地点和匿名人物存在信息。最多 20 条、无缓存/持久化；未知位置不猜测，查询失败省略本轮组合上下文。Observation ≠ Knowledge ≠ Experience ≠ Memory；无识别、Action 或 Scheduler。离线检查：`python scripts/run_observation_smoke.py`，仅使用临时 DB 和 synthetic NPC。
 
+B7 增加 [Action Intent / Resolver](docs/b7_action_resolver_v01.md)：仅受信任 developer/test 显式提交 typed move_to；位置更新与 terminal receipt 原子提交，action_id 持久化幂等，旧动作重放不改变当前位置。Life 普通部分更新也改为事务内读取最新行并仅 patch 显式字段，避免覆盖并发移动。没有聊天/LLM 动作解析、自主决策、NPC 行动或 Scheduler；不改 State / Memory。离线检查：`python scripts/run_world_action_smoke.py`，仅临时 DB。
+
 ## 开发环境
 
 Linux 服务器完成 A7 安装并将 `/opt/si/app/.venv/bin` 加入 PATH 后，运行 `si setup` 安全配置 DeepSeek/SiliconFlow keys、API-only Memory 与 QQ/None；密钥输入 masked，不需要手工 export API key。Review 确认后原子保存配置、离线检查，再可选启动服务；之后运行 `si` 日常运维。详见 [First-run Setup](docs/a7_2_first_run_setup_v01.md)。离线 smoke：`python scripts/run_setup_smoke.py`。

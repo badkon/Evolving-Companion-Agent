@@ -83,3 +83,5 @@ user Archive、主 LLM、assistant Archive 失败仍遵循原有完成边界。l
 ## 15. Future Action Resolver
 
 未来意图 → Action Resolver → World mutation 须另行设计。B6 不实现 Action、move_to、Scheduler、NPC 日程、自主移动或事件；不修改 State、Life、NPC、Place 或 Memory。显式测试位置更新只是已有 LifeService 开发接口，不是角色行动。
+
+B7 已另行实现 [受信任显式 move_to](b7_action_resolver_v01.md)，不改变上述 B6 只读边界；移动后由下一次 observe 重新捕获，Resolver 不推送或缓存 Observation。

@@ -87,7 +87,9 @@ B4：World Seed → World Entity Store → World Entity Service → Character Li
 
 B5 增加独立 `world_npcs` 静态 Registry：NPCRecord → NPCService → SQLiteStore，仅显式创建/更新、读取 active 记录及 Place UUID 关联。Full Character 当前只有 SI-001；普通 NPC 是 Tier-0 lightweight World data，不是 Agent，无 LLM、Memory、模型、后台循环或自动移动。正式 NPC 初始化为 0，不虚构人物。World Truth ≠ Character Knowledge ≠ Character Observation；NPC 资料不直接进入 Prompt。详见 [B5 Lightweight NPC Registry](b5_lightweight_npc_registry_v01.md)。
 
-B6：World/Life → ObservationService → 本轮 ObservationSnapshot → 独立 Prompt 环境区块。Character 位置只来自 Life current_location_entity_id，NPC 只按完全相同 Place + active 查询（稳定 UUID 排序，查询 21、最多返回 20）；不递归空间关系、不识别人物。Life 投影与观察共用 Store 的同一只读事务，事务在 LLM 前关闭；CLI/QQ 共用 Clock 和 identity.internal_id。仅匿名人物存在信息与已记录地点进入 Prompt，文本被引用为数据；无缓存或观察持久化。查询失败省略本轮组合上下文，只记录异常类型，主完成及 formation 边界不变。Observation ≠ Knowledge ≠ Experience ≠ Memory；assistant 提及观察后的 Archive 仍只是 Conversation evidence，并非完整 World evidence。intention → Action Resolver → World 仍未实现。详见 [B6 Observation Layer](b6_observation_layer_v01.md)。
+B6：World/Life → ObservationService → 本轮 ObservationSnapshot → 独立 Prompt 环境区块。Character 位置只来自 Life current_location_entity_id，NPC 只按完全相同 Place + active 查询（稳定 UUID 排序，查询 21、最多返回 20）；不递归空间关系、不识别人物。Life 投影与观察共用 Store 的同一只读事务，事务在 LLM 前关闭；CLI/QQ 共用 Clock 和 identity.internal_id。仅匿名人物存在信息与已记录地点进入 Prompt，文本被引用为数据；无缓存或观察持久化。查询失败省略本轮组合上下文，只记录异常类型，主完成及 formation 边界不变。Observation ≠ Knowledge ≠ Experience ≠ Memory；assistant 提及观察后的 Archive 仍只是 Conversation evidence，并非完整 World evidence。详见 [B6 Observation Layer](b6_observation_layer_v01.md)。
+
+B7：trusted explicit MoveToIntent → ActionResolver → SQLite BEGIN IMMEDIATE → Life location-only patch + terminal receipt → COMMIT → ActionResult。Character key 仍为 identity.internal_id，唯一位置仍在 Life；expected location 必须匹配最新行。world_action_results 持久化幂等键，同 ID 同请求重放原结果，不重新移动；不同请求冲突不覆盖。业务拒绝保存 receipt，storage/commit 失败保守区分 known rollback 与 outcome unknown。Life 普通 partial update 也在同一写事务读取最新行，仅更新显式字段；首次初始化仅补缺失。Intent ≠ Result ≠ World Fact ≠ Memory。没有聊天/LLM 动作解析、自主决策、NPC 行动、WorldEvent、State/Memory integration 或 Scheduler；B6 下一次读取自然刷新。详见 [B7 Action Resolver](b7_action_resolver_v01.md)。
 
 B2 复用 `apply_elapsed_time()`，依据 State 中四个独立 UTC 字段锚点进行 baseline reconciliation。`updated_at` 表示整行最后实际变化时间；无变化检查不刷新任何锚点，其他字段变化不重置未变字段的累计时间。SQLite 兼容初始化为旧行增加并回填四个锚点列。Offline Duration 使用 last interaction，State elapsed 使用各字段锚点，二者独立。活动保留，不生成离线经历。详见 [B2 Temporal State Reconciliation](b2_temporal_state_reconciliation_v01.md)。
 
@@ -151,6 +153,8 @@ B4 新增 `world_entities`，parent 与 Life 的地点 UUID 使用 FK。Seed 插
 B5 新增 `world_npcs`，稳定 NPC UUID 主键、可空 Place FK、active 与基础资料。SQLite 地点检查要求引用存在且为 place，名称不是 identity；no-op 不刷新 updated_at，停用保留记录。没有 NPC history、Memory 或 scheduler，不修改 Character-owned 表的语义。
 
 B6 不新增表、索引、migration 或 runtime 文件；只读 Life/World/NPC，不修改 State 或 Memory。ObservationSnapshot 仅属于当前 turn，不保存到 history 或 evidence，也不恢复上一轮快照。
+
+B7 新增 world_action_results，仅保存 success/rejected move_to 回执及原请求字段；目标 UUID 无 existence FK，以容纳 invalid_destination 拒绝。位置与 success receipt 原子提交，没有 pending/job/history framework；回执不是当前 location 或 Memory evidence。失败不自动重试。
 
 上层模块不应直接依赖具体数据库实现，应通过统一的数据访问边界访问 Character State。
 

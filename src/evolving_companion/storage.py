@@ -12,10 +12,15 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from evolving_companion.character_state import CharacterState, TEMPORAL_ANCHORS
-from evolving_companion.character_life import CharacterLifeContext, ProjectedLifeContext
+from evolving_companion.character_life import (
+    CharacterLifeContext,
+    LifeContextData,
+    ProjectedLifeContext,
+)
 from evolving_companion.observation import MAX_VISIBLE_NPCS, ObservationSnapshot
 from evolving_companion.world import WorldEntity
 from evolving_companion.npc import NPCRecord
+from evolving_companion.world_actions import ActionReason, ActionResult, MoveToIntent
 
 MEMORY_TYPES = frozenset({"episodic", "semantic", "self", "relationship"})
 MEMORY_SOURCES = frozenset({"explicit", "observed", "inferred"})
@@ -148,6 +153,23 @@ CREATE TABLE IF NOT EXISTS character_life_context (
     primary_area_entity_id TEXT REFERENCES world_entities(entity_id),
     current_location_entity_id TEXT REFERENCES world_entities(entity_id),
     world_references_migrated INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS world_action_results (
+    action_id TEXT PRIMARY KEY NOT NULL,
+    character_id TEXT NOT NULL,
+    action_type TEXT NOT NULL CHECK (action_type = 'move_to'),
+    destination_entity_id TEXT NOT NULL,
+    expected_location_entity_id TEXT,
+    status TEXT NOT NULL CHECK (status IN ('success', 'rejected')),
+    reason TEXT NOT NULL CHECK (reason IN (
+        'moved', 'already_at_destination', 'invalid_destination',
+        'location_precondition_failed', 'character_id_mismatch',
+        'life_context_missing', 'clock_moved_backwards'
+    )),
+    location_before TEXT,
+    location_after TEXT,
+    resolved_at TEXT NOT NULL
 );
 """
 
@@ -398,18 +420,279 @@ class SQLiteStore:
         self, character_id: UUID
     ) -> CharacterLifeContext | None:
         with closing(self._connect()) as connection:
-            row = connection.execute(
-                """SELECT character_id, life_stage, home_entity_id, school_entity_id,
-                   primary_area_entity_id, current_location_entity_id, current_role, updated_at,
-                   world_references_migrated FROM character_life_context WHERE character_id = ?""",
-                (str(character_id),),
-            ).fetchone()
+            return self._read_life_context(connection, character_id)
+
+    @staticmethod
+    def _read_life_context(
+        connection: sqlite3.Connection, character_id: UUID
+    ) -> CharacterLifeContext | None:
+        row = connection.execute(
+            """SELECT character_id, life_stage, home_entity_id, school_entity_id,
+               primary_area_entity_id, current_location_entity_id, current_role, updated_at,
+               world_references_migrated FROM character_life_context WHERE character_id = ?""",
+            (str(character_id),),
+        ).fetchone()
         if row is None:
             return None
         values = dict(row)
         if not values.pop("world_references_migrated"):
             raise ValueError("Initialize World seed before reading legacy Life Context")
         return CharacterLifeContext.model_validate(values)
+
+    @staticmethod
+    def _validate_life_places(
+        connection: sqlite3.Connection, context: CharacterLifeContext
+    ) -> None:
+        for entity_id in (
+            context.home_entity_id,
+            context.school_entity_id,
+            context.primary_area_entity_id,
+            context.current_location_entity_id,
+        ):
+            if (
+                entity_id is not None
+                and connection.execute(
+                    "SELECT 1 FROM world_entities WHERE entity_id = ? AND entity_type = 'place'",
+                    (str(entity_id),),
+                ).fetchone()
+                is None
+            ):
+                raise ValueError("Life reference must point to an existing Place")
+
+    def initialize_character_life_context(
+        self, context: CharacterLifeContext
+    ) -> CharacterLifeContext:
+        """Insert only if still missing; never overwrite a concurrent initializer."""
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = self._read_life_context(connection, context.character_id)
+            if existing is not None:
+                return existing
+            self._validate_life_places(connection, context)
+            values = context.model_dump(mode="json")
+            values["updated_at"] = context.updated_at.isoformat()
+            columns = tuple(values)
+            inserted = connection.execute(
+                f"INSERT INTO character_life_context ({', '.join(columns)}, world_references_migrated) "
+                f"VALUES ({', '.join('?' for _ in columns)}, 1)",
+                tuple(values.values()),
+            )
+            if inserted.rowcount != 1:
+                raise sqlite3.IntegrityError(
+                    "Life initialization did not insert one row"
+                )
+            return context
+
+    def patch_character_life_context(
+        self, character_id: UUID, changes: LifeContextData, now: datetime
+    ) -> CharacterLifeContext:
+        """Read latest + validate + patch explicit fields in one write transaction."""
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError("Life update time must be timezone-aware")
+        now = now.astimezone(timezone.utc)
+        # Revalidate the boundary; the SQL field whitelist is LifeContextData only.
+        fields = LifeContextData.model_validate(changes.model_dump(exclude_unset=True))
+        values = fields.model_dump(exclude_unset=True)
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current = self._read_life_context(connection, character_id)
+            if current is None:
+                raise KeyError("Life Context does not exist")
+            candidate = CharacterLifeContext.model_validate(
+                current.model_dump() | values
+            )
+            self._validate_life_places(connection, candidate)
+            if candidate == current:
+                return current
+            if now < current.updated_at:
+                raise ValueError(
+                    "clock_moved_backwards; Life Context update not applied"
+                )
+            updated = CharacterLifeContext.model_validate(
+                candidate.model_dump() | {"updated_at": now}
+            )
+            encoded = fields.model_dump(mode="json", exclude_unset=True)
+            assignments = ", ".join(f"{field} = ?" for field in encoded)
+            patched = connection.execute(
+                f"UPDATE character_life_context SET {assignments}, updated_at = ? WHERE character_id = ?",
+                (*encoded.values(), now.isoformat(), str(character_id)),
+            )
+            if patched.rowcount != 1:
+                raise sqlite3.IntegrityError("Life patch did not update one row")
+            return updated
+
+    @staticmethod
+    def _read_action_receipt(
+        connection: sqlite3.Connection, action_id: UUID
+    ) -> tuple[MoveToIntent, ActionResult] | None:
+        row = connection.execute(
+            "SELECT * FROM world_action_results WHERE action_id = ?", (str(action_id),)
+        ).fetchone()
+        if row is None:
+            return None
+        intent = MoveToIntent.model_validate(
+            {field: row[field] for field in MoveToIntent.model_fields}
+        )
+        result = ActionResult.model_validate(
+            {
+                field: row[field]
+                for field in ActionResult.model_fields
+                if field in row.keys()
+            }
+        )
+        return intent, result
+
+    def get_world_action_result(self, action_id: UUID) -> ActionResult | None:
+        try:
+            with closing(self._connect()) as connection:
+                receipt = self._read_action_receipt(connection, action_id)
+                return receipt[1] if receipt is not None else None
+        except (sqlite3.Error, ValueError):
+            # None means absent, not lookup failure; suppress private exception text.
+            raise RuntimeError("action_result_lookup_failed") from None
+
+    @staticmethod
+    def _insert_action_receipt(
+        connection: sqlite3.Connection, intent: MoveToIntent, result: ActionResult
+    ) -> None:
+        values = intent.model_dump(mode="json") | result.model_dump(
+            mode="json", exclude={"replayed", "outcome_known"}
+        )
+        values["resolved_at"] = result.resolved_at.isoformat()
+        inserted = connection.execute(
+            f"INSERT INTO world_action_results ({', '.join(values)}) "
+            f"VALUES ({', '.join('?' for _ in values)})",
+            tuple(values.values()),
+        )
+        if inserted.rowcount != 1:
+            raise sqlite3.IntegrityError("Action receipt did not insert one row")
+
+    def _resolve_move_to(
+        self,
+        connection: sqlite3.Connection,
+        intent: MoveToIntent,
+        character_id: UUID,
+        stamp: ActionResult,
+    ) -> ActionResult:
+        receipt = self._read_action_receipt(connection, intent.action_id)
+        if receipt is not None:
+            original_intent, original_result = receipt
+            if original_intent != intent:
+                return ActionResult.model_validate(
+                    stamp.model_dump()
+                    | {"status": "rejected", "reason": "action_id_conflict"}
+                )
+            if (
+                intent.character_id != character_id
+                and original_result.status == "success"
+            ):
+                return ActionResult.model_validate(
+                    stamp.model_dump()
+                    | {"status": "rejected", "reason": "character_id_mismatch"}
+                )
+            return ActionResult.model_validate(
+                original_result.model_dump() | {"replayed": True}
+            )
+
+        life = (
+            None
+            if intent.character_id != character_id
+            else self._read_life_context(connection, character_id)
+        )
+        before = life.current_location_entity_id if life is not None else None
+        reason: ActionReason
+        if intent.character_id != character_id:
+            reason = "character_id_mismatch"
+        elif life is None:
+            reason = "life_context_missing"
+        elif (
+            connection.execute(
+                "SELECT 1 FROM world_entities WHERE entity_id = ? AND entity_type = 'place'",
+                (str(intent.destination_entity_id),),
+            ).fetchone()
+            is None
+        ):
+            reason = "invalid_destination"
+        elif before != intent.expected_location_entity_id:
+            reason = "location_precondition_failed"
+        elif before == intent.destination_entity_id:
+            reason = "already_at_destination"
+        elif stamp.resolved_at < life.updated_at:
+            reason = "clock_moved_backwards"
+        else:
+            reason = "moved"
+        result = ActionResult.model_validate(
+            stamp.model_dump()
+            | {
+                "status": "success"
+                if reason in {"moved", "already_at_destination"}
+                else "rejected",
+                "reason": reason,
+                "location_before": before,
+                "location_after": intent.destination_entity_id
+                if reason == "moved"
+                else before,
+            }
+        )
+        if reason == "moved":
+            moved = connection.execute(
+                "UPDATE character_life_context SET current_location_entity_id = ?, updated_at = ? WHERE character_id = ?",
+                (
+                    str(intent.destination_entity_id),
+                    result.resolved_at.isoformat(),
+                    str(character_id),
+                ),
+            )
+            if moved.rowcount != 1:
+                raise sqlite3.IntegrityError("Action did not update one Life row")
+        self._insert_action_receipt(connection, intent, result)
+        return result
+
+    def resolve_world_action(
+        self, intent: MoveToIntent, character_id: UUID, resolved_at: datetime
+    ) -> ActionResult:
+        """Location + terminal receipt commit atomically; never auto-retry."""
+        failure = ActionResult(
+            action_id=intent.action_id,
+            character_id=intent.character_id,
+            destination_entity_id=intent.destination_entity_id,
+            resolved_at=resolved_at,
+            status="failed",
+            reason="storage_error",
+        )
+        try:
+            connection = self._connect()
+        except sqlite3.Error:
+            return failure  # No transaction could start.
+        with closing(connection):
+            commit_attempted = False
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                result = self._resolve_move_to(
+                    connection, intent, character_id, failure
+                )
+                commit_attempted = True
+                connection.commit()
+                return result  # Only after successful COMMIT, including replay.
+            except (sqlite3.Error, ValueError):
+                rollback_known = False
+                try:
+                    # After an ambiguous COMMIT with no active transaction, a
+                    # successful rollback() is a no-op, not proof of rollback.
+                    if not commit_attempted or connection.in_transaction:
+                        connection.rollback()
+                        rollback_known = True
+                except sqlite3.Error:
+                    pass
+                return ActionResult.model_validate(
+                    failure.model_dump()
+                    | {
+                        "outcome_known": rollback_known,
+                        "reason": "storage_error"
+                        if rollback_known
+                        else "commit_outcome_unknown",
+                    }
+                )
 
     def capture_observation_context(
         self, character_id: UUID, observed_at: datetime

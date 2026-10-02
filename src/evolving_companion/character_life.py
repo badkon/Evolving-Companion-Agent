@@ -74,7 +74,13 @@ class CharacterLifeStore(Protocol):
         self, character_id: UUID
     ) -> CharacterLifeContext | None: ...
 
-    def upsert_character_life_context(self, context: CharacterLifeContext) -> None: ...
+    def initialize_character_life_context(
+        self, context: CharacterLifeContext
+    ) -> CharacterLifeContext: ...
+
+    def patch_character_life_context(
+        self, character_id: UUID, changes: LifeContextData, now: datetime
+    ) -> CharacterLifeContext: ...
 
 
 class CharacterLifeService:
@@ -108,21 +114,8 @@ class CharacterLifeService:
                     "updated_at": self._clock.now_utc(),
                 }
             )
-            self._validate_places(context)
-            self._store.upsert_character_life_context(context)
+            context = self._store.initialize_character_life_context(context)
         return context
-
-    def _validate_places(self, context: CharacterLifeContext) -> None:
-        for value in (
-            context.home_entity_id,
-            context.school_entity_id,
-            context.primary_area_entity_id,
-            context.current_location_entity_id,
-        ):
-            if value is not None:
-                entity = self._store.get_world_entity(value)
-                if entity is None or entity.entity_type != "place":
-                    raise ValueError("Life reference must point to an existing Place")
 
     def project_context(
         self, character_id: UUID, world: WorldEntityService
@@ -152,8 +145,10 @@ class CharacterLifeService:
         current_location_entity_id: UUID | None | _Unchanged = UNCHANGED,
         current_role: str | None | _Unchanged = UNCHANGED,
     ) -> CharacterLifeContext:
-        current = self.get_life_context(character_id)
-        values = current.model_dump()
+        # Preserve existing bootstrap semantics, but never write this read's row
+        # back. The Store reads the latest row under the same lock as its patch.
+        self.get_life_context(character_id)
+        values: dict[str, object] = {}
         for name, value in (
             ("life_stage", life_stage),
             ("home_entity_id", home_entity_id),
@@ -164,16 +159,7 @@ class CharacterLifeService:
         ):
             if value is not UNCHANGED:
                 values[name] = value
-        # Validate before comparing or persisting; invalid input never creates
-        # a partially applied update.
-        candidate = CharacterLifeContext.model_validate(values)
-        self._validate_places(candidate)
-        if candidate == current:
-            return current
-        now = self._clock.now_utc()
-        if now < current.updated_at:
-            raise ValueError("clock_moved_backwards; Life Context update not applied")
-        values["updated_at"] = now
-        updated = CharacterLifeContext.model_validate(values)
-        self._store.upsert_character_life_context(updated)
-        return updated
+        changes = LifeContextData.model_validate(values)
+        return self._store.patch_character_life_context(
+            character_id, changes, self._clock.now_utc()
+        )
