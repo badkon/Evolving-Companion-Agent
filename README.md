@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 当前保留通用 Runtime Configuration、Setup、Health 和 Backup / Restore；新的部署包装尚未实现。
+- 已加入 Docker Compose Server Runtime Foundation（API-only、宿主机持久化）；通用 Runtime Configuration、Setup、Health 和 Backup / Restore 保留。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
@@ -35,6 +35,8 @@ B7 增加 [Action Intent / Resolver](docs/b7_action_resolver_v01.md)：仅受信
 B8 增加 [Lazy World Temporal Context](docs/b8_lazy_world_time_v01.md)：按访问由共享 Clock 和已有 Character 时区计算当前时段，经 B6 环境区块简短投影；不持久化、无 Scheduler，不改变位置、NPC、State 或 Memory。Conversation 一轮只采样一次时间，成功交流记账复用本轮时间。离线检查：`python scripts/run_world_time_smoke.py`，包含 B8 单阶段与 B6+B7+B8 组合 smoke，仅使用临时 DB。
 
 ## 开发环境
+
+Linux 服务器运行方式见 [Docker Server Deployment v1](docs/docker_server_deployment_v1.md)：准备配置与持久化目录，`docker compose build` 后 `docker compose up -d`。只运行 SI Core，OneBot 是外部接口；不提供一键 installer、自动更新或已发布镜像。
 
 安装项目后，`si setup` 或 `python -m evolving_companion.setup` 提供通用应用配置向导，默认写入 Git 忽略的 `config/si.env`：masked API key、model、QQ/None transport、Review 和原子保存。向导不启动运行程序。API-only 入口、离线检查和 SQLite-safe backup/restore 的命令及边界见 [Runtime Operations](docs/runtime_operations.md)。离线向导检查：`python scripts/run_setup_smoke.py`。当前不提供自动安装、更新、服务管理或日志面板。
 

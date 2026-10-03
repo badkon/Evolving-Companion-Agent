@@ -1,6 +1,6 @@
 # Runtime Configuration / Operations
 
-当前保留可复用的应用能力；不提供安装器、自动更新、服务管理或 Manager 运维面板，也未实现新的部署包装。
+当前保留可复用的应用能力；Linux Server 可使用 [Docker Compose 运行包装](docker_server_deployment_v1.md)。不提供安装器、自动更新或 Manager 运维面板。
 
 ## 能力分类
 
@@ -51,4 +51,4 @@ python -m evolving_companion.restore /absolute/path/to/backup.db --env-file conf
 
 ## 验证边界
 
-配置、离线检查、SQLite backup/restore 与 Setup 测试使用临时路径、synthetic DB 和 fake keys；`python scripts/run_setup_smoke.py` 仅运行 headless 配置流程，不调用真实 API。当前不提供真实服务器自动安装/重启验收，也未新增容器、CI/CD 或发布机制。
+配置、离线检查、SQLite backup/restore 与 Setup 测试使用临时路径、synthetic DB 和 fake keys；`python scripts/run_setup_smoke.py` 仅运行 headless 配置流程，不调用真实 API。Docker 静态测试不要求 daemon，不等同真实服务器运行验收；当前不提供自动安装/重启验收、CI/CD 或发布机制。

@@ -1,0 +1,54 @@
+services:
+  si-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: evolving-companion-agent:docker-v1
+    restart: unless-stopped
+    init: true
+    # Linux Server only: the existing localhost OneBot endpoint is on the host.
+    network_mode: host
+    environment:
+      SI_RUNTIME_DB: runtime/si_001.db
+      SI_BACKUP_DIR: backups
+      SI_MEMORY_EMBEDDING_PROVIDER: api
+      SI_MEMORY_RERANKER_PROVIDER: api
+    volumes:
+      - type: bind
+        source: ./config
+        target: /app/config
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data
+        target: /app/data
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./runtime
+        target: /app/runtime
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./backups
+        target: /app/backups
+        bind:
+          create_host_path: false
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    healthcheck:
+      test: [CMD, python, -m, evolving_companion.health, --env-file, config/si.env, --offline]
+      interval: 60s
+      timeout: 15s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
