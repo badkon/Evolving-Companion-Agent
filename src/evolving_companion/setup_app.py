@@ -3,7 +3,7 @@
 import asyncio
 import logging
 
-from textual import work
+from textual import events, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, VerticalScroll
 from textual.screen import Screen
@@ -11,6 +11,7 @@ from textual.widgets import Button, Footer, Header, Input, Select, Static
 
 from evolving_companion.config_env import SECRET_FIELDS
 from evolving_companion.setup_services import SetupService
+from evolving_companion.ui_text import FIELD_LABELS, display_value
 
 
 class SetupScreen(Screen[bool]):
@@ -19,8 +20,10 @@ class SetupScreen(Screen[bool]):
     #setup-body { padding: 1 2; }
     #setup-body Static { height: auto; margin-bottom: 1; }
     #setup-body Horizontal { height: auto; }
-    #setup-body Button { margin-right: 1; }
+    #setup-body Button { margin-right: 1; width: auto; min-width: 10; }
     #setup-body Input, #setup-body Select { margin-bottom: 1; }
+    SetupScreen.compact #setup-body Horizontal { layout: vertical; }
+    SetupScreen.compact #setup-body Button { width: 100%; margin-right: 0; }
     """
 
     def __init__(self, service: SetupService) -> None:
@@ -36,23 +39,23 @@ class SetupScreen(Screen[bool]):
         yield Header()
         with VerticalScroll(id="setup-body"):
             yield Static(
-                "First-run Setup — Application configuration",
+                "首次配置 — 应用配置",
                 id="welcome",
                 markup=False,
             )
             with Horizontal(id="welcome-actions"):
-                yield Button("Review", id="existing-review")
-                yield Button("Configure / Reconfigure", id="configure")
-                yield Button("Exit", id="exit-welcome")
+                yield Button("检查配置", id="existing-review")
+                yield Button("配置 / 重新配置", id="configure")
+                yield Button("退出", id="exit-welcome")
             with VerticalScroll(id="form"):
                 yield Static(
-                    "LLM: DeepSeek API\nMemory: SiliconFlow / API / API（不安装本地 ML）",
+                    "语言模型：DeepSeek API\n记忆服务：SiliconFlow / API / API（不安装本地机器学习模型）",
                     markup=False,
                 )
                 for name in SECRET_FIELDS:
                     yield Static(name, id=f"status-{name}", markup=False)
                     yield Select(
-                        [("Keep existing", "keep"), ("Replace", "replace")],
+                        [("保留已有值", "keep"), ("替换", "replace")],
                         value="keep",
                         allow_blank=False,
                         id=f"mode-{name}",
@@ -65,9 +68,9 @@ class SetupScreen(Screen[bool]):
                 for name in ("SI_MEMORY_EMBEDDING_MODEL", "SI_MEMORY_RERANKER_MODEL"):
                     yield Static(name, markup=False)
                     yield Input(id=f"value-{name}")
-                yield Static("Transport: QQ / None", markup=False)
+                yield Static("聊天连接：QQ / 无聊天连接", markup=False)
                 yield Select(
-                    [("QQ OneBot", "qq"), ("None — 暂不配置聊天连接", "none")],
+                    [("QQ（SnowLuma / OneBot）", "qq"), ("无聊天连接（none）", "none")],
                     value="none",
                     allow_blank=False,
                     id="transport",
@@ -81,26 +84,28 @@ class SetupScreen(Screen[bool]):
                     yield Input(id=f"value-{name}")
                 yield Static("", id="runtime-path", markup=False)
                 with Horizontal():
-                    yield Button("Review", id="review-form")
-                    yield Button("Cancel", id="cancel-form")
+                    yield Button("检查配置", id="review-form")
+                    yield Button("取消", id="cancel-form")
             with VerticalScroll(id="review"):
                 yield Static("", id="review-text", markup=False)
                 with Horizontal():
-                    yield Button(
-                        "Confirm — Save Configuration", id="save", variant="primary"
-                    )
-                    yield Button("Back", id="back-form")
-                    yield Button("Cancel", id="cancel-review")
+                    yield Button("确认保存配置", id="save", variant="primary")
+                    yield Button("返回", id="back-form")
+                    yield Button("取消", id="cancel-review")
             with VerticalScroll(id="summary"):
                 yield Static("", id="summary-text", markup=False)
                 with Horizontal():
-                    yield Button("No / Finish", id="finish")
+                    yield Button("完成 / 返回", id="finish")
             yield Static("", id="setup-error", markup=False)
         yield Footer()
 
     def on_mount(self) -> None:
+        self.set_class(self.size.width < 60, "compact")
         self._show("welcome")
         self.prepare()
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.set_class(event.size.width < 60, "compact")
 
     def _show(self, stage: str) -> None:
         self.query_one("#welcome-actions").display = stage == "welcome"
@@ -113,7 +118,7 @@ class SetupScreen(Screen[bool]):
         try:
             detection = await asyncio.to_thread(self.service.detect)
             self.query_one("#welcome", Static).update(
-                f"First-run Setup\n{detection.message}\nCharacter: {detection.character}\nInternal ID: {detection.internal_identity}"
+                f"首次配置\n{detection.message}\n角色：{detection.character}\n内部 ID：{detection.internal_identity}"
             )
             defaults = self.service.form_defaults()
             for name, value in defaults.items():
@@ -124,12 +129,14 @@ class SetupScreen(Screen[bool]):
                 transport if transport in {"qq", "none"} else "none"
             )
             for name, status in self.service.secret_status().items():
-                self.query_one(f"#status-{name}", Static).update(f"{name}: {status}")
+                self.query_one(f"#status-{name}", Static).update(
+                    f"{name}：{display_value(status)}"
+                )
                 mode = "keep" if status == "Configured" else "replace"
                 self.query_one(f"#mode-{name}", Select).value = mode
                 self.query_one(f"#secret-{name}", Input).disabled = mode == "keep"
             self.query_one("#runtime-path", Static).update(
-                f"Runtime DB（只读）: {self.service.paths.database}"
+                f"运行数据库（只读）：{self.service.paths.database}"
             )
             self.query_one("#configure", Button).focus()
         except Exception as error:
@@ -167,9 +174,12 @@ class SetupScreen(Screen[bool]):
             self.service.validate(self.pending)
         review = self.service.review(self.pending)
         self.query_one("#review-text", Static).update(
-            "Review — Save Configuration?\n"
-            + "\n".join(f"{name}: {value}" for name, value in review.items())
-            + "\nExisting configuration will be backed up before replacement."
+            "检查配置 — 是否保存？\n"
+            + "\n".join(
+                f"{FIELD_LABELS.get(name, name)}：{display_value(value)}"
+                for name, value in review.items()
+            )
+            + "\n替换前会备份现有配置。"
         )
         self.query_one("#save", Button).display = not existing
         self._show("review")
@@ -181,7 +191,7 @@ class SetupScreen(Screen[bool]):
             "Setup operation failed (%s)", type(error).__name__
         )
         self.query_one("#setup-error", Static).update(
-            f"操作失败 ({type(error).__name__})；检查配置字段、文件权限或应用配置。"
+            f"操作失败（{type(error).__name__}）；请检查配置字段和文件权限。"
         )
 
     @work
@@ -231,7 +241,7 @@ class SetupScreen(Screen[bool]):
 
 
 class SetupApp(App[None]):
-    TITLE = "SI First-run Setup"
+    TITLE = "SI 首次配置"
     ENABLE_COMMAND_PALETTE = False
 
     def __init__(self, service: SetupService) -> None:

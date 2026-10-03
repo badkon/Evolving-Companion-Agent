@@ -10,6 +10,7 @@ import traceback
 
 import httpx
 import pytest
+from rich.cells import cell_len
 from textual.widgets import Button, Input, Select, Static
 
 from evolving_companion import config_env, setup as setup_entry, setup_services
@@ -118,8 +119,8 @@ def test_missing_incomplete_configured_detection(
     assert setup.save(updates()).saved
     detection = setup.detect()
     assert detection.status == "Configured"
-    assert "Existing application configuration detected" in detection.message
-    assert "will be preserved" in detection.message
+    assert "已检测到现有应用配置" in detection.message
+    assert "现有角色身份将保持不变" in detection.message
     assert len(detection.internal_identity) == 9
 
 
@@ -309,7 +310,9 @@ def test_setup_headless_save_review_and_exit(
             await app.workers.wait_for_complete()
             screen = app.screen
             assert isinstance(screen, SetupScreen)
-            assert "Missing" in str(screen.query_one("#welcome", Static).content)
+            assert "应用配置：尚未完成" in str(
+                screen.query_one("#welcome", Static).content
+            )
             screen.query_one("#configure", Button).press()
             await pilot.pause()
             fill_form(screen)
@@ -364,3 +367,60 @@ def test_parser_bad_input_and_existing_secret_never_prefilled(
             assert not app.is_running
 
     asyncio.run(smoke())
+
+
+@pytest.mark.parametrize("width", [48, 80])
+def test_chinese_setup_labels_buttons_and_narrow_layout(setup, monkeypatch, width):
+    fake_check(monkeypatch, setup)
+    app = SetupApp(setup)
+
+    async def run():
+        async with app.run_test(size=(width, 35)) as pilot:
+            await app.workers.wait_for_complete()
+            assert app.title == "SI 首次配置"
+            screen = app.screen
+            assert isinstance(screen, SetupScreen)
+            welcome = str(screen.query_one("#welcome", Static).content)
+            assert (
+                "首次配置" in welcome
+                and "角色：玲" in welcome
+                and "内部 ID：" in welcome
+            )
+            assert "现有角色身份将保持不变" in welcome
+            assert screen.has_class("compact") == (width < 60)
+            for ident, label in (
+                ("existing-review", "检查配置"),
+                ("configure", "配置 / 重新配置"),
+                ("exit-welcome", "退出"),
+            ):
+                button = screen.query_one(f"#{ident}", Button)
+                assert str(button.label) == label
+                assert button.content_region.width >= cell_len(label)
+                assert button.region.right <= width
+            # Enter on the focused Chinese Configure button retains the same form flow.
+            await pilot.press("enter")
+            await pilot.pause()
+            assert screen.query_one("#form").display
+            fill_form(screen)
+            screen.query_one("#review-form", Button).press()
+            await pilot.pause()
+            review = screen.query_one("#review-text", Static)
+            assert (
+                "检查配置 — 是否保存" in str(review.content)
+                and not review._render_markup
+            )
+            assert "语言模型（LLM）" in str(review.content)
+            assert all(secret not in str(review.content) for secret in KEYS.values())
+            assert str(screen.query_one("#save", Button).label) == "确认保存配置"
+            screen.query_one("#save", Button).press()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            summary = str(screen.query_one("#summary-text", Static).content)
+            assert "配置已成功保存" in summary
+            assert all(secret not in summary for secret in KEYS.values())
+            await pilot.press("escape")
+            assert not app.is_running
+
+    asyncio.run(run())
+    assert setup.env.read()["SI_CHAT_TRANSPORT"] == "qq"
+    assert setup.detect().status == "Configured"

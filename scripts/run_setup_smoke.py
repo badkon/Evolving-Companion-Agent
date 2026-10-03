@@ -41,7 +41,9 @@ async def smoke(root: Path) -> None:
             await app.workers.wait_for_complete()
             screen = app.screen
             assert isinstance(screen, SetupScreen)
-            assert "Missing" in str(screen.query_one("#welcome", Static).content)
+            assert "应用配置：尚未完成" in str(
+                screen.query_one("#welcome", Static).content
+            )
             screen.query_one("#configure", Button).press()
             await pilot.pause()
             for name, value in secrets.items():

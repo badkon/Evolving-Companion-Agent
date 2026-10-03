@@ -23,23 +23,23 @@ class FakeController:
     def start(self) -> OperationResult:
         self.state = "Running"
         self.calls.append("start")
-        return OperationResult(True, "Fake start OK")
+        return OperationResult(True, "模拟启动成功")
 
     def stop(self) -> OperationResult:
         self.state = "Stopped"
         self.calls.append("stop")
-        return OperationResult(True, "Fake stop OK")
+        return OperationResult(True, "模拟停止成功")
 
     def restart(self) -> OperationResult:
         self.state = "Running"
         self.calls.append("restart")
-        return OperationResult(True, "Fake restart OK")
+        return OperationResult(True, "模拟重启成功")
 
     def status(self) -> RuntimeStatus:
         return RuntimeStatus(self.state, "Fake process only")
 
     def logs(self) -> OperationResult:
-        return OperationResult(True, "Synthetic bounded log; no real runtime")
+        return OperationResult(True, "模拟日志；没有真实运行进程")
 
 
 async def smoke(root: Path) -> None:
@@ -60,7 +60,7 @@ async def smoke(root: Path) -> None:
     ):
         async with app.run_test(size=(100, 40)) as pilot:
             await app.workers.wait_for_complete()
-            assert "Status" in str(app.query_one("#output", Static).content)
+            assert "状态" in str(app.query_one("#output", Static).content)
             for choice in ("Start", "Logs", "Configure"):
                 app.query_one("#navigation", OptionList).highlighted = PAGES.index(
                     choice

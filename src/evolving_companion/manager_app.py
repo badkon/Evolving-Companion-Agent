@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import asdict
 import logging
 
-from textual import work
+from textual import events, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Footer, Header, OptionList, Static
@@ -13,22 +13,26 @@ from textual.widgets import Footer, Header, OptionList, Static
 from evolving_companion.config_env import OperationResult
 from evolving_companion.manager_services import ManagerService
 from evolving_companion.setup_app import SetupScreen
+from evolving_companion.ui_text import FIELD_LABELS, PAGE_LABELS, display_value
 
 PAGES = ("Start", "Stop", "Restart", "Status", "Logs", "Configure", "Exit")
 
 
 class SIManagerApp(App[None]):
-    TITLE = "SI-001 Manager"
+    TITLE = "SI 管理器"
     ENABLE_COMMAND_PALETTE = False
     BINDINGS = [
-        ("q", "safe_quit", "退出 Manager"),
+        ("q", "safe_quit", "退出管理器"),
         ("r", "refresh_page", "刷新"),
-        ("escape", "back", "Status"),
+        ("escape", "back", "返回状态"),
     ]
     CSS = """
     #navigation { width: 25; }
     #body { width: 1fr; padding: 1; }
     #output, #result { height: auto; }
+    Screen.compact #main-layout { layout: vertical; }
+    Screen.compact #navigation { width: 100%; height: 9; }
+    Screen.compact #body { width: 100%; height: 1fr; }
     """
 
     def __init__(self, service: ManagerService) -> None:
@@ -39,17 +43,21 @@ class SIManagerApp(App[None]):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Horizontal():
-            yield OptionList(*PAGES, id="navigation")
+        with Horizontal(id="main-layout"):
+            yield OptionList(*(PAGE_LABELS[page] for page in PAGES), id="navigation")
             with VerticalScroll(id="body"):
                 yield Static("", id="output", markup=False)
                 yield Static("", id="result", markup=False)
         yield Footer()
 
     def on_mount(self) -> None:
+        self.screen.set_class(self.size.width < 70, "compact")
         self.query_one("#navigation", OptionList).highlighted = PAGES.index("Status")
         self.query_one("#navigation", OptionList).focus()
         self.action_refresh_page()
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.screen_stack[0].set_class(event.size.width < 70, "compact")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if self.busy or event.option_list.id != "navigation":
@@ -73,9 +81,10 @@ class SIManagerApp(App[None]):
     def _page_text(self) -> str:
         if self.page == "Logs":
             result = self.service.logs()
-            return "Recent Logs (max 100 lines / 64 KiB; r refresh)\n" + result.message
-        return "Status (local checks, not chat readiness)\n" + "\n".join(
-            f"{key}: {value}" for key, value in asdict(self.service.status()).items()
+            return "最近日志（最多 100 行 / 64 KiB；r 刷新）\n" + result.message
+        return "状态（仅本地检查，不代表聊天已就绪）\n" + "\n".join(
+            f"{FIELD_LABELS[key]}：{'尚未创建' if key == 'runtime_db' and value == 'Missing' else display_value(value)}"
+            for key, value in asdict(self.service.status()).items()
         )
 
     @work
@@ -98,7 +107,7 @@ class SIManagerApp(App[None]):
                 "Manager operation failed (%s)", type(error).__name__
             )
             self.query_one("#result", Static).update(
-                f"Operation failed ({type(error).__name__}); check local configuration/permissions."
+                f"操作失败（{type(error).__name__}）；请检查本地配置和权限。"
             )
         finally:
             self.busy = False
@@ -115,7 +124,7 @@ class SIManagerApp(App[None]):
             self.push_screen(SetupScreen(setup), self._configured)
         except Exception as error:
             self.query_one("#result", Static).update(
-                f"Configure unavailable ({type(error).__name__})."
+                f"无法打开配置（{type(error).__name__}）。"
             )
         finally:
             self.busy = False
@@ -140,8 +149,6 @@ class SIManagerApp(App[None]):
         if isinstance(self.screen, SetupScreen):
             self.screen.action_cancel()
         elif self.busy:
-            self.notify(
-                "Operation in progress; wait before exiting.", severity="warning"
-            )
+            self.notify("操作进行中，请等待完成后再退出。", severity="warning")
         else:
             self.exit()  # Intentionally never stop the independent Core process.

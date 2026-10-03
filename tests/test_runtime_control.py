@@ -139,7 +139,7 @@ def test_timeout_does_not_restart_or_kill(controller, monkeypatch):
     )
     monkeypatch.setattr(runtime_control.select, "select", lambda *args: ([], [], []))
     result = control.restart()
-    assert not result.ok and "timed out" in result.message
+    assert not result.ok and "停止超时" in result.message
     assert signals == [signal.SIGINT] and len(launches) == 1
     assert control.record.exists() and control.status().state == "Running"
 

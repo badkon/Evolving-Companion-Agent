@@ -7,7 +7,7 @@ from evolving_companion.setup_services import SetupService
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="SI application configuration")
+    parser = argparse.ArgumentParser(description="SI 首次配置 — 应用配置")
     parser.add_argument("command", nargs="?", choices=["setup"])
     parser.add_argument("--env-file", type=Path, default=Path("config/si.env"))
     parser.add_argument("--project-root", type=Path)
@@ -17,9 +17,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         SetupApp(SetupService(args.env_file, project_root=args.project_root)).run()
     except Exception as error:
-        print(
-            f"Application setup failed ({type(error).__name__}); check configuration/file permissions."
-        )
+        print(f"应用配置失败（{type(error).__name__}）；请检查配置和文件权限。")
         return 1
     return 0
 

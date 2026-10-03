@@ -19,6 +19,7 @@ from evolving_companion.manager_app import PAGES, SIManagerApp
 from evolving_companion.manager_services import ManagerService
 from evolving_companion.runtime_control import RuntimeState, RuntimeStatus
 from evolving_companion.setup_app import SetupScreen
+from evolving_companion.ui_text import PAGE_LABELS, check_text, display_value
 
 
 class FakeController:
@@ -29,23 +30,23 @@ class FakeController:
     def start(self) -> OperationResult:
         self.calls.append("start")
         self.state = "Running"
-        return OperationResult(True, "Fake runtime started")
+        return OperationResult(True, "模拟进程已启动")
 
     def stop(self) -> OperationResult:
         self.calls.append("stop")
         self.state = "Stopped"
-        return OperationResult(True, "Fake runtime stopped")
+        return OperationResult(True, "模拟进程已停止")
 
     def restart(self) -> OperationResult:
         self.calls.append("restart")
         self.state = "Running"
-        return OperationResult(True, "Fake runtime restarted")
+        return OperationResult(True, "模拟进程已重启")
 
     def status(self) -> RuntimeStatus:
         return RuntimeStatus(self.state, "Fake only")
 
     def logs(self) -> OperationResult:
-        return OperationResult(True, "[bold] fake-key \x1b\x00 log")
+        return OperationResult(True, "中文[bold] fake-key \x1b\x00 日志")
 
 
 @pytest.fixture(autouse=True)
@@ -237,14 +238,16 @@ def test_headless_navigation_lifecycle_configure_and_exit(service):
         async with app.run_test() as pilot:
             await app.workers.wait_for_complete()
             output = app.query_one("#output", Static)
-            assert "Status" in str(output.content) and not output._render_markup
+            assert "状态" in str(output.content) and not output._render_markup
             for choice in ("Start", "Stop", "Restart", "Logs"):
                 app.query_one("#navigation", OptionList).highlighted = PAGES.index(
                     choice
                 )
                 await pilot.press("enter")
                 await app.workers.wait_for_complete()
-            assert "[bold]" in str(output.content) and "\x1b" not in str(output.content)
+            assert "中文[bold]" in str(output.content) and "\x1b" not in str(
+                output.content
+            )
             await pilot.press("r")
             await app.workers.wait_for_complete()
             await pilot.press("escape")
@@ -296,4 +299,62 @@ def test_busy_guard_and_safe_error_rendering(service, caplog):
     assert "fake-private-secret" not in caplog.text
     assert (
         isinstance(service.controller, FakeController) and not service.controller.calls
+    )
+
+
+@pytest.mark.parametrize("width", [48, 80])
+def test_chinese_status_menu_and_terminal_resize(service, width):
+    service.env_file.write_text(
+        "SI_CHAT_TRANSPORT=qq\nDEEPSEEK_API_KEY=fake-key\n", encoding="utf-8"
+    )
+    app = SIManagerApp(service)
+
+    async def run():
+        async with app.run_test(size=(width, 30)) as pilot:
+            await app.workers.wait_for_complete()
+            assert app.title == "SI 管理器"
+            menu = app.query_one("#navigation", OptionList)
+            assert [
+                str(menu.get_option_at_index(i).prompt) for i in range(len(PAGES))
+            ] == [PAGE_LABELS[page] for page in PAGES]
+            output = str(app.query_one("#output", Static).content)
+            for text in (
+                "角色：玲",
+                "内部 ID：",
+                "运行状态：已停止",
+                "聊天连接：QQ（SnowLuma / OneBot）",
+                "本地检查：",
+            ):
+                assert text in output
+            assert app.screen.has_class("compact") == (width < 70)
+            assert menu.region.right <= width
+            assert app.query_one("#body").region.right <= width
+            # Keyboard navigation still dispatches English internal action identifiers.
+            menu.highlighted = 0
+            menu.focus()
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            assert "运行中" in str(app.query_one("#output", Static).content)
+            await pilot.press("r")
+            await app.workers.wait_for_complete()
+            await pilot.resize_terminal(48 if width == 80 else 80, 30)
+            await pilot.pause()
+            assert app.screen.has_class("compact") == (width == 80)
+            await pilot.press("escape", "q")
+
+    asyncio.run(run())
+    assert isinstance(service.controller, FakeController)
+    assert (
+        service.controller.calls == ["start"] and service.controller.state == "Running"
+    )
+
+
+def test_presentation_keeps_internal_status_and_safe_check_text():
+    assert display_value("Running") == "运行中"
+    assert display_value("Configured") == "已配置"
+    assert (
+        check_text(
+            "LLM API Key        CONFIGURED\nTransport       FAILED (ValueError)\nRuntime DB (read-only) NOT INITIALIZED (offline; no DB created)"
+        )
+        == "语言模型 API 密钥：已配置\n聊天连接：失败（ValueError）\n运行数据库（只读）：尚未初始化（离线检查；未创建数据库）"
     )

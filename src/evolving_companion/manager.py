@@ -6,9 +6,7 @@ from collections.abc import Sequence
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="SI Manager — native runtime / configuration"
-    )
+    parser = argparse.ArgumentParser(description="SI 管理器 — 原生运行控制 / 应用配置")
     parser.add_argument("command", nargs="?", choices=["setup"])
     parser.add_argument("--env-file", type=Path, default=Path("config/si.env"))
     parser.add_argument("--project-root", type=Path)
@@ -28,9 +26,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ManagerService(args.env_file, project_root=args.project_root)
         ).run()
     except Exception as error:
-        print(
-            f"Manager failed ({type(error).__name__}); check local configuration/terminal."
-        )
+        print(f"管理器启动失败（{type(error).__name__}）；请检查本地配置和终端。")
         return 1
     return 0
 

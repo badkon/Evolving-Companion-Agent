@@ -19,6 +19,7 @@ from evolving_companion.config_env import (
 from evolving_companion.config_env import OperationResult, redact
 from evolving_companion.local_env import PROJECT_ROOT
 from evolving_companion.qq_adapter import _identifier
+from evolving_companion.ui_text import check_text
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ class SetupService:
             Path(effective.get("SI_RUNTIME_DB", "runtime/si_001.db")).resolve(),
             Path(effective.get("SI_BACKUP_DIR", "backups")).resolve(),
         )
-        self.last_result = SetupResult(False, False, "Not saved.")
+        self.last_result = SetupResult(False, False, "尚未保存。")
 
     def effective(self, values: Mapping[str, str] | None = None) -> dict[str, str]:
         result = self._defaults | self._existing | dict(values or {}) | self.environment
@@ -74,15 +75,15 @@ class SetupService:
             self.paths.project / "data/characters/si_001.yaml"
         )
         message = (
-            "Existing application configuration detected."
+            "已检测到现有应用配置。"
             if status == "Configured"
-            else f"Application configuration: {status}."
+            else "应用配置：尚未完成。"
         )
         return SetupDetection(
             status,
             f"{seed.identity.working_name} / {seed.identity.development_id}",
             str(seed.identity.internal_id)[:8] + "…",
-            message + " Existing Character Identity will be preserved.",
+            message + " 现有角色身份将保持不变。",
         )
 
     def form_defaults(self) -> dict[str, str]:
@@ -196,17 +197,15 @@ class SetupService:
             )
             return OperationResult(
                 result.returncode == 0,
-                redact(result.stdout, self.effective()).strip()
-                or "Application check failed; check local files/permissions.",
+                check_text(redact(result.stdout, self.effective())).strip()
+                or "应用检查失败，请检查本地文件和权限。",
                 result.returncode,
             )
         except Exception as error:
             logging.getLogger(__name__).warning(
                 "Setup check failed (%s)", type(error).__name__
             )
-            return OperationResult(
-                False, "Application check unavailable; configuration remains saved."
-            )
+            return OperationResult(False, "无法执行应用检查；配置仍已保存。")
 
     def save(self, values: Mapping[str, str]) -> SetupResult:
         try:
@@ -222,24 +221,19 @@ class SetupService:
             self.last_result = SetupResult(
                 False,
                 False,
-                "Configuration save failed; check fields, permissions or concurrent edits.",
+                "配置保存失败，请检查字段、权限或是否有并发修改。",
             )
             return self.last_result
         check = self.run_checks()
         no_transport = self._existing.get("SI_CHAT_TRANSPORT") == "none"
-        message = "Configuration saved successfully." + (
-            " Existing configuration backed up." if backup else ""
-        )
+        message = "配置已成功保存。" + (" 已备份原有配置。" if backup else "")
         if no_transport:
-            message += "\nNo chat transport configured."
+            message += "\n未配置聊天连接。"
         if any(key in self.environment for key in values):
-            message += "\nExplicit OS/environment overrides remain in effect."
+            message += "\n显式系统环境变量仍优先于配置文件。"
         self.last_result = SetupResult(
             True,
             check.ok and not no_transport,
-            message
-            + "\n"
-            + check.message
-            + "\nConnectivity tests are not part of setup v0.1.",
+            message + "\n" + check.message + "\n首次配置 v0.1 不包含网络连通性测试。",
         )
         return self.last_result

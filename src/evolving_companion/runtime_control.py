@@ -132,11 +132,9 @@ class NativeProcessController:
 
     def _inspect(self) -> tuple[RuntimeStatus, dict | None]:
         if not self.record.exists() and not self.record.is_symlink():
-            return RuntimeStatus("Stopped", "No managed runtime."), None
+            return RuntimeStatus("Stopped", "没有受管理的运行进程。"), None
         if sys.platform != "linux":
-            return RuntimeStatus(
-                "Unknown", "Native process verification requires Linux."
-            ), None
+            return RuntimeStatus("Unknown", "原生进程身份验证需要 Linux。"), None
         try:
             record = self._read_record()
             if self._child is not None:
@@ -144,7 +142,7 @@ class NativeProcessController:
             identity = self._identity(record["pid"])
             if identity is None:
                 return RuntimeStatus(
-                    "Failed", "Recorded runtime exited; stale record."
+                    "Failed", "记录的运行进程已退出；记录已过期。"
                 ), record
             if identity != record.get("identity"):
                 raise ValueError("Process identity changed")
@@ -156,11 +154,11 @@ class NativeProcessController:
             if identity["uid"] != os.getuid():
                 raise ValueError("Different process owner")
             return RuntimeStatus(
-                "Running", "Verified process running; not a chat readiness check."
+                "Running", "已确认进程运行中；不代表聊天已就绪。"
             ), record
         except Exception:
             return RuntimeStatus(
-                "Unknown", "Cannot verify recorded runtime; control refused."
+                "Unknown", "无法确认记录中的进程身份；已拒绝控制。"
             ), None
 
     def status(self) -> RuntimeStatus:
@@ -178,15 +176,11 @@ class NativeProcessController:
     def _start(self) -> OperationResult:
         status, old = self._inspect()
         if status.state == "Running":
-            return OperationResult(
-                True, "Already running; no duplicate process started."
-            )
+            return OperationResult(True, "进程已在运行，不会重复启动。")
         if status.state == "Unknown":
             return OperationResult(False, status.message)
         if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
-            return OperationResult(
-                False, "Linux pidfd support is required for safe native control."
-            )
+            return OperationResult(False, "安全的原生进程控制需要 Linux pidfd 支持。")
         if old is not None:
             self.record.unlink()
         # Reserve first. A failure recording a spawned process must block a second writer.
@@ -213,12 +207,12 @@ class NativeProcessController:
         if identity is None:
             self._child.poll()
             self.record.unlink()
-            return OperationResult(False, "Runtime exited during launch; inspect Logs.")
+            return OperationResult(False, "进程在启动期间退出，请查看日志。")
         record = self._instance() | {"pid": self._child.pid, "identity": identity}
         self._write_record(record)
         return OperationResult(
             True,
-            "Runtime launched; use Status/Logs. This does not establish chat readiness.",
+            "已启动进程，请查看状态和日志；这不代表聊天已就绪。",
         )
 
     def _stop(self) -> OperationResult:
@@ -228,23 +222,23 @@ class NativeProcessController:
         if status.state != "Running":
             if record is not None:
                 self.record.unlink()
-            return OperationResult(True, "Runtime stopped; stale record cleared.")
+            return OperationResult(True, "进程已停止；已清理过期记录。")
         assert record is not None
         # Pin the process before revalidation. Never fall back to os.kill(PID).
         descriptor = os.pidfd_open(record["pid"])
         try:
             if self._identity(record["pid"]) != record["identity"]:
-                return OperationResult(False, "Process identity changed; stop refused.")
+                return OperationResult(False, "进程身份已变化；已拒绝停止。")
             signal.pidfd_send_signal(descriptor, signal.SIGINT)
             readable, _, _ = select.select([descriptor], [], [], self.stop_timeout)
             if not readable:
                 return OperationResult(
-                    False, "Stop timed out; process record retained. No force kill."
+                    False, "停止超时；已保留进程记录，不会强制终止。"
                 )
             if self._child is not None:
                 self._child.poll()
             self.record.unlink()
-            return OperationResult(True, "Runtime exited after SIGINT.")
+            return OperationResult(True, "进程收到 SIGINT 后已退出。")
         finally:
             os.close(descriptor)
 
@@ -258,7 +252,7 @@ class NativeProcessController:
         except Exception as error:
             return OperationResult(
                 False,
-                f"Native operation refused/failed ({type(error).__name__}); inspect local permissions/record.",
+                f"原生进程操作被拒绝或失败（{type(error).__name__}）；请检查本地权限和进程记录。",
             )
 
     def start(self) -> OperationResult:
@@ -273,7 +267,7 @@ class NativeProcessController:
     def logs(self) -> OperationResult:
         try:
             if not self.log.exists():
-                return OperationResult(True, "No native runtime log yet.")
+                return OperationResult(True, "暂无原生运行日志。")
             with os.fdopen(private_open(self.log, os.O_RDONLY), "rb") as file:
                 file.seek(0, os.SEEK_END)
                 size = file.tell()
@@ -288,4 +282,4 @@ class NativeProcessController:
                 True, redact("\n".join(lines[-100:]), self.environment)
             )
         except Exception as error:
-            return OperationResult(False, f"Logs unavailable ({type(error).__name__}).")
+            return OperationResult(False, f"无法读取日志（{type(error).__name__}）。")

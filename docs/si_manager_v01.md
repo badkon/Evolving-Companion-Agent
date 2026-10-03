@@ -9,7 +9,7 @@ si setup --env-file /absolute/path/to/si.env
 python -m evolving_companion.manager
 ```
 
-默认进入 Textual TUI：Start、Stop、Restart、Status、Logs、Configure、Exit。上下键/Enter 导航，`r` 刷新，Esc 回 Status，`q` 仅退出 Manager。worker 执行检查/控制，busy 时拒绝重复操作和退出。Configure 复用现有 SetupScreen（masked keys、Review、private backup、atomic save），不是另一套配置实现。配置取消/完成后回 Status；不自动启动/重启 runtime。建议在项目根目录运行，沿用 Setup 的相对路径约定。
+默认进入中文 Textual TUI「SI 管理器」：启动、停止、重启、状态、日志、配置、退出。上下键/Enter 导航，`r` 刷新，Esc 回状态，`q` 仅退出管理器。worker 执行检查/控制，busy 时拒绝重复操作和退出。配置复用现有中文「首次配置」SetupScreen（masked keys、检查配置、private backup、atomic save），不是另一套配置实现。配置取消/完成后回状态；不自动启动/重启 runtime。窄终端下菜单/按钮纵向排列；内部状态值与配置字段不翻译，不引入多语言框架。建议在项目根目录运行，沿用 Setup 的相对路径约定。
 
 ## 运行与身份
 

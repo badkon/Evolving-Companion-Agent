@@ -16,6 +16,7 @@ from evolving_companion.runtime_control import (
     RuntimeController,
 )
 from evolving_companion.setup_services import SetupService
+from evolving_companion.ui_text import check_text
 
 
 @dataclass(frozen=True)
@@ -104,12 +105,12 @@ class ManagerService:
             )
             return OperationResult(
                 result.returncode == 0,
-                redact(result.stdout, self.effective()),
+                check_text(redact(result.stdout, self.effective())),
                 result.returncode,
             )
         except Exception as error:
             return OperationResult(
-                False, f"Local check unavailable ({type(error).__name__})."
+                False, f"无法执行本地检查（{type(error).__name__}）。"
             )
 
     def status(self) -> ManagerStatus:
@@ -154,7 +155,7 @@ class ManagerService:
         if not check.ok:
             return OperationResult(
                 False,
-                "Start blocked: strict runtime configuration check failed. Open Configure.",
+                "无法启动：运行配置检查未通过，请打开“配置”。",
             )
         return self.backend().start()
 
@@ -165,7 +166,7 @@ class ManagerService:
         if not self.check().ok:
             return OperationResult(
                 False,
-                "Restart blocked: strict configuration check failed; running process unchanged.",
+                "无法重启：配置检查未通过；现有运行进程保持不变。",
             )
         return self.backend().restart()
 
