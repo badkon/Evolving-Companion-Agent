@@ -6,7 +6,7 @@
 
 ## 2. First-run Flow
 
-完成 install、将 `/opt/si/app/.venv/bin` 加入 PATH 后：
+完成 A7.3 install 后，固定 `/usr/local/bin/si` 在 PATH；root 管理 shell 执行（普通 sudo 管理员用 `sudo si`）：
 
 ```bash
 si setup --help
@@ -25,7 +25,7 @@ si
 
 ## 4. Secret Handling
 
-复用现有 [Textual Input(password=True)](https://textual.textualize.io/widgets/input/)。输入不 echo，已有凭据从不回填，仅 Configured/Missing，无前后片段/长度。默认 Keep existing；选择 Replace 才启用空 password input。新文件缺少 key 时需输入；不会将 OS 密钥未经确认复制到文件。API key 不作为命令行参数，不写日志、Review 或 Summary。结束/取消清空 frontend 输入和待写 payload；Python 字符串不是可保证清零的安全内存。
+复用现有 [Textual Input(password=True)](https://textual.textualize.io/widgets/input/)。输入不 echo，已有凭据从不回填，仅 Configured/Missing，无前后片段/长度。默认 Keep existing；选择 Replace 才启用空 password input。QQ 配置缺少 key 时需输入；A7.3 的 None 离线配置允许 key 留空；不会将 OS 密钥未经确认复制到文件。API key 不作为命令行参数，不写日志、Review 或 Summary。结束/取消清空 frontend 输入和待写 payload；Python 字符串不是可保证清零的安全内存。
 
 ## 5. LLM
 
@@ -37,7 +37,7 @@ si
 
 ## 7. Transport
 
-仅 QQ OneBot / None。QQ 配置复用 SI_CHAT_TRANSPORT、SI_ONEBOT_WS_URL、SI_ONEBOT_ACCESS_TOKEN、SI_QQ_BOT_USER_ID、SI_QQ_ALLOWED_USER_IDS，access token 同样 masked/Keep/Replace，允许无 token。新文件默认 None；不暗中启用 QQ。None 可保存但 deploy_check 仍沿 A7 报 Transport ERROR，显示 Service cannot start until a transport is configured，无 Start 按钮。无 Matrix/Discord/Telegram 或 transport registry。
+仅 QQ OneBot / None。QQ 配置复用 SI_CHAT_TRANSPORT、SI_ONEBOT_WS_URL、SI_ONEBOT_ACCESS_TOKEN、SI_QQ_BOT_USER_ID、SI_QQ_ALLOWED_USER_IDS，access token 同样 masked/Keep/Replace，允许无 token。新文件默认 None；不暗中启用 QQ。A7.3 后 None 可无密钥保存，保存后 deploy_check 使用显式 --offline 基础检查，显示 Service cannot start until a transport is configured，无 Start 按钮。无 Matrix/Discord/Telegram 或 transport registry。
 
 ## 8. Review
 
@@ -72,4 +72,4 @@ Manager Overview 显示 Setup Required/Ready，并有 Run Setup；Configuration 
 
 ## 15. Future Web Setup
 
-UI-independent env/config/review/validation services 可供未来 frontend 复用；A7.3 Developer Console/Web Setup、remote admin、OAuth 等均未实现，无对应空模块。
+UI-independent env/config/review/validation services 可供未来 frontend 复用；Developer Console/Web Setup、remote admin、OAuth 等均未实现，无对应空模块。

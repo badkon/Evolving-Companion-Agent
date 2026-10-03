@@ -104,7 +104,7 @@ def database_character_ids(path: Path) -> set[str]:
 
 
 def check_deployment(
-    paths: DeploymentPaths, *, health: bool = False
+    paths: DeploymentPaths, *, health: bool = False, offline: bool = False
 ) -> tuple[CheckResult, ...]:
     results: list[CheckResult] = []
 
@@ -173,12 +173,32 @@ def check_deployment(
             or os.environ.get("SI_MEMORY_RERANKER_PROVIDER") != "api"
         ):
             raise ValueError("Server profile requires api/api")
+        if offline:
+            for name in (
+                "SI_MEMORY_EMBEDDING_API_ID",
+                "SI_MEMORY_EMBEDDING_MODEL",
+                "SI_MEMORY_RERANKER_MODEL",
+            ):
+                if not os.environ.get(name, "").strip():
+                    raise ValueError("Memory provider configuration is incomplete")
+            if int(os.environ.get("SI_MEMORY_EMBEDDING_DIMENSION", "0")) <= 0:
+                raise ValueError("Invalid embedding dimension")
+            if float(os.environ.get("SI_MEMORY_API_TIMEOUT", "30")) <= 0:
+                raise ValueError("Invalid API timeout")
+            for name in ("SI_MEMORY_EMBEDDING_API_URL", "SI_MEMORY_RERANKER_API_URL"):
+                endpoint = urlsplit(os.environ.get(name, ""))
+                if endpoint.scheme != "https" or not endpoint.hostname:
+                    raise ValueError("Invalid API endpoint")
+                _ = endpoint.port
+            return
         with ExitStack() as resources:
             create_memory_providers(
                 resources
             )  # Validate only: lazy clients, no requests.
 
     def transport() -> None:
+        if offline and os.environ.get("SI_CHAT_TRANSPORT") == "none":
+            return
         if os.environ.get("SI_CHAT_TRANSPORT") != "qq":
             raise ValueError("Only the existing qq entry is supported")
         _identifier(os.environ.get("SI_QQ_BOT_USER_ID", ""), user=True)
@@ -209,14 +229,29 @@ def check_deployment(
         "World Seed", lambda: load_world_seed(paths.app / "data/worlds/si_world.yaml")
     )
     check("Runtime Directory / Writable SQLite Probe", runtime_directory)
-    check("SQLite" if not health else "Runtime DB (read-only)", sqlite_check)
+    if offline and health and not paths.database.exists():
+        results.append(
+            CheckResult(
+                "Runtime DB (read-only)",
+                True,
+                "NOT INITIALIZED (offline; no DB created)",
+            )
+        )
+    else:
+        check("SQLite" if not health else "Runtime DB (read-only)", sqlite_check)
     for name, env_name in (
         ("LLM API Key", "DEEPSEEK_API_KEY"),
         ("SiliconFlow API Key", "SILICONFLOW_API_KEY"),
     ):
         configured = bool(os.environ.get(env_name, "").strip())
         results.append(
-            CheckResult(name, configured, "CONFIGURED" if configured else "MISSING")
+            CheckResult(
+                name,
+                configured or offline,
+                "CONFIGURED"
+                if configured
+                else ("DEFERRED (offline)" if offline else "MISSING"),
+            )
         )
     check("Embedding / Reranker Provider", providers)
     check("Transport", transport)

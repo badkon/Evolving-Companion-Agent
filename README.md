@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 开发阶段：**A7.2 — First-run Setup v0.1**（Windows 离线/headless 验证；Linux/systemd 与真实 QQ 部署尚未验证）。
+- 部署阶段：**A7.3 — Bootstrap / Linux Validation Support**（local implementation ready；真实 Linux/systemd/reboot 尚待验收）。
 - Current Character：`SI-001`（开发代号）。
 - Working Name：**玲**，目前仅为工作名，尚未正式确认为 Personal Name。
 - Identity Stage：`Pre-Identity`；Birthday 尚未确定。
@@ -36,9 +36,21 @@ B8 增加 [Lazy World Temporal Context](docs/b8_lazy_world_time_v01.md)：按访
 
 ## 开发环境
 
-Linux 服务器完成 A7 安装并将 `/opt/si/app/.venv/bin` 加入 PATH 后，运行 `si setup` 安全配置 DeepSeek/SiliconFlow keys、API-only Memory 与 QQ/None；密钥输入 masked，不需要手工 export API key。Review 确认后原子保存配置、离线检查，再可选启动服务；之后运行 `si` 日常运维。详见 [First-run Setup](docs/a7_2_first_run_setup_v01.md)。离线 smoke：`python scripts/run_setup_smoke.py`。
+Linux Quick Start（先审阅可信 checkout；root SSH 或 sudo 管理 shell）：
 
-A7.1 为已部署 Linux 实例提供 SI Manager：将 `/opt/si/app/.venv/bin` 加入 PATH 后运行 `si`（`si --help` 查看帮助），进入 Overview、Service、Deployment Check、Health、只读 Configuration、Backup / Restore、Logs。配置不显示密钥；恢复需要确认及服务停止。操作与权限限制见 [SI Manager TUI](docs/a7_1_si_manager_tui_v01.md)。离线 smoke：`python scripts/run_si_manager_smoke.py`。
+```bash
+git clone https://github.com/badkon/Evolving-Companion-Agent.git
+cd Evolving-Companion-Agent
+sudo bash deploy/install.sh
+sudo si setup
+sudo si
+```
+
+无密钥验收可选 Transport=None，不启动服务；`sudo bash /opt/si/scripts/validate_linux.sh` 做离线检查。完整安装、权限、update 与分级验收见 [A7.3 Linux Deployment](docs/a7_3_real_linux_deployment_validation.md)。
+
+Linux 服务器完成 A7.3 安装后，root 管理 shell 运行 `si setup`（普通 sudo 管理员用 `sudo si setup`） 安全配置 DeepSeek/SiliconFlow keys、API-only Memory 与 QQ/None；密钥输入 masked，不需要手工 export API key。Review 确认后原子保存配置、离线检查，再可选启动服务；之后运行 `si` 日常运维。详见 [First-run Setup](docs/a7_2_first_run_setup_v01.md)。离线 smoke：`python scripts/run_setup_smoke.py`。
+
+A7.1 为已部署 Linux 实例提供 SI Manager：A7.3 提供稳定 `/usr/local/bin/si`，运行 `si`（`si --help` 查看帮助），进入 Overview、Service、Deployment Check、Health、只读 Configuration、Backup / Restore、Logs。配置不显示密钥；恢复需要确认及服务停止。操作与权限限制见 [SI Manager TUI](docs/a7_1_si_manager_tui_v01.md)。离线 smoke：`python scripts/run_si_manager_smoke.py`。
 
 A7 提供 Linux `/opt/si` 部署资产、专用 si 用户、uv 锁定的 API-only 环境、systemd、离线 deploy_check/health 和 SQLite-safe backup/restore。config/runtime/backups 与 app checkout 分离；`SI_RUNTIME_DB` 支持外置数据库，本地默认不变。首次安装不自动启动或覆盖配置。完整步骤、持久化合同及限制见 [A7 Deployment Foundation](docs/a7_deployment_foundation_v01.md)。
 

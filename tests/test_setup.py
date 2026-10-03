@@ -281,9 +281,23 @@ def test_check_command_isolated_env_and_redacted_output(
         "evolving_companion.deploy_check",
         "--env-file",
         str(setup.env.path),
+        "--offline",
     ]
     assert options["env"] == setup.environment and "shell" not in options
     assert all(value not in repr(args) for value in KEYS.values())
+
+
+def test_none_can_save_without_keys_but_cannot_start(
+    setup: SetupService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_check(monkeypatch, setup)
+    result = setup.save({"SI_CHAT_TRANSPORT": "none"})
+    assert result.saved and not result.ready
+    assert setup.env.read()["DEEPSEEK_API_KEY"] == ""
+    assert setup.env.read()["SILICONFLOW_API_KEY"] == ""
+    assert not setup.start(confirmed=True).ok
+    with pytest.raises(EnvEditError, match="keys are required"):
+        setup.validate({"SI_CHAT_TRANSPORT": "qq"})
 
 
 def test_cli_setup_route_and_help(

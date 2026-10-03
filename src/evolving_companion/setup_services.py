@@ -108,7 +108,9 @@ class SetupService:
 
     def validate(self, values: Mapping[str, str]) -> None:
         candidate = self._defaults | self._existing | dict(values)
-        if any(not candidate.get(key, "").strip() for key in SECRET_FIELDS[:2]):
+        if candidate.get("SI_CHAT_TRANSPORT") != "none" and any(
+            not candidate.get(key, "").strip() for key in SECRET_FIELDS[:2]
+        ):
             raise EnvEditError("DeepSeek and SiliconFlow keys are required.")
         if (
             candidate.get("SI_MEMORY_EMBEDDING_PROVIDER") != "api"
@@ -172,16 +174,19 @@ class SetupService:
 
     def run_checks(self) -> OperationResult:
         try:
+            arguments = [
+                sys.executable,
+                "-m",
+                "evolving_companion.deploy_check",
+                "--env-file",
+                str(self.env.path),
+            ]
+            if self.effective().get("SI_CHAT_TRANSPORT") == "none":
+                arguments.append("--offline")
             # Fresh environment avoids stale file-derived keys in a long-running Manager.
             # Credentials are passed only via env, never argv or command output.
             result = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "evolving_companion.deploy_check",
-                    "--env-file",
-                    str(self.env.path),
-                ],
+                arguments,
                 env=self.environment,
                 capture_output=True,
                 text=True,

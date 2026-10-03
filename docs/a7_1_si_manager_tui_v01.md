@@ -21,14 +21,14 @@ console script：`si = evolving_companion.manager:main`。A7 API-only `uv sync -
 Linux SSH 会话：
 
 ```bash
-export PATH="/opt/si/app/.venv/bin:$PATH"
+# A7.3 安装 /usr/local/bin/si；root 管理 shell 或 sudo si
 si --help
 si
 # 或直接：
 /opt/si/app/.venv/bin/si
 ```
 
-维护者可在自己的 shell profile 保存 PATH。不要把 Core 改为 root；Manager 操作者权限与 Core 的 si 用户分离。默认 `/opt/si/config/si.env`，可 `--env-file`；入口复用 A7 loader，不读取开发 `.env.local`。Windows 提示 Linux deployment 并退出，不访问 /opt/si。
+A7.3 无需维护者编辑 PATH；普通 sudo 管理员可用 sudo si。不要把 Core 改为 root；Manager 操作者权限与 Core 的 si 用户分离。默认 `/opt/si/config/si.env`，可 `--env-file`；入口复用 A7 loader，不读取开发 `.env.local`。Windows 提示 Linux deployment 并退出，不访问 /opt/si。
 
 ## 5. Overview
 

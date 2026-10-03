@@ -34,7 +34,7 @@ installer 以 root/sudo 操作系统资源，创建无登录 shell 的系统用�
 
 ## 6. uv Environment
 
-要求先安装可由 root 和 si 使用的 uv。installer 检测缺失后清晰退出，不自动下载执行远程脚本；来源与受控安装方法见 [uv 官方安装说明](https://docs.astral.sh/uv/getting-started/installation/)。可下载安装器、检查来源/内容后由维护者执行，不使用不透明 curl|sh。
+A7.3 复用可由 root/si 使用的 uv，缺失时下载固定 0.12.22 官方二进制并校验发布 SHA256；来源与受控安装方法见 [uv 官方安装说明](https://docs.astral.sh/uv/getting-started/installation/)。可下载安装器、检查来源/内容后由维护者执行，不使用不透明 curl|sh。
 
 ```bash
 uv sync --project /opt/si/app --locked --no-dev --no-extra local-memory --python 3.12
@@ -51,7 +51,7 @@ LLM 为 DeepSeek API；Memory 为 SiliconFlow Qwen/Qwen3-Embedding-8B（4096）�
 
 A7.2 已提供 `si setup` masked 输入与安全 env service，替代首次手工填写的推荐路径；installer 仍不询问 keys、不覆盖配置。已有配置默认 Keep，写前 private backup + atomic replace。详情见 [First-run Setup](a7_2_first_run_setup_v01.md)。
 
-服务器配置 /opt/si/config/si.env，owner si、0600，Git 忽略 si.env；模板仅含空密钥。用编辑器填写 DEEPSEEK_API_KEY、SILICONFLOW_API_KEY 和 QQ routing；无终端交互式密钥输入。
+服务器配置 /opt/si/config/si.env，owner si、0600，Git 忽略 si.env；模板仅含空密钥。使用 si setup masked 输入 DEEPSEEK_API_KEY、SILICONFLOW_API_KEY 和 QQ routing；None 可无密钥保存但不启动。
 入口使用已有 python-dotenv，无 shell source；OS/process 同名变量优先，禁用变量插值。systemd EnvironmentFile 不执行 shell expansion，因此模板不使用 ${SILICONFLOW_API_KEY}；deployment loader 将该 key 映射到未显式设置的两个 generic SI_MEMORY_*_API_KEY。显式 generic key 不覆盖。
 server 不读取 app/.env.local；开发 CLI/QQ 默认路径保留原行为。check/health 只输出 CONFIGURED/MISSING 或安全异常类型，不输出文件内容、keys、headers、完整 validation errors。systemd env 文件规则参考 [systemd.exec](https://manpages.debian.org/bookworm/systemd/systemd.exec.5.en.html)。
 
@@ -70,8 +70,8 @@ Restart=on-failure，RestartSec=5，配置错误退出 78 且 RestartPreventExit
 维护者先 review 可信仓库代码，然后运行：
 
 ```bash
-sudo bash deploy/install.sh <credential-free-repository-url> <reviewed-ref>
-# 首次 check 因空 keys/routing 失败是预期结果；基础安装已完成，不自动启动。
+sudo bash deploy/install.sh
+# A7.3 自动 offline check；keys 延后配置，不自动启动。
 sudo -u si /opt/si/app/.venv/bin/si setup
 sudo -u si /opt/si/app/.venv/bin/python -m evolving_companion.deploy_check
 sudo systemctl enable si.service
@@ -135,9 +135,9 @@ systemd 是唯一进程管理器；没有 arbitrary shell API、公开 admin、r
 
 ## 20. Known Limitations
 
-Windows tests 只覆盖 Python/helpers、assets 静态契约和 mocks，不代表 systemd sandbox、权限、真实发行版安装或网络可用性已实测。当前机器没有 bash，bash -n 未执行；上线前在目标 Linux 上执行四个 deploy/*.sh 的 bash -n 和 systemd-analyze verify deploy/systemd/si.service。
-依赖锁记录 ML extra 的可选 metadata，但 server 不安装；没有 backup rotation/cron、自动更新、自动恢复、监控或 HA。恢复状态检查存在 TOCTOU：管理员必须保持服务停止并阻止并发 writer/start。首次缺 config 时 check 会失败，填配置后重跑。不能将健康输出当成真实对话能力证明。
+Windows tests 只覆盖 Python/helpers、assets 静态契约和 mocks，不代表 systemd sandbox、权限、真实发行版安装或网络可用性已实测。A7 初始实现未执行 bash -n；A7.3 使用本机 Git Bash 仅做语法检查，不代表 Linux 验收；上线前在目标 Linux 上对所有 deploy/*.sh 执行 bash -n 和 systemd-analyze verify deploy/systemd/si.service。
+依赖锁记录 ML extra 的可选 metadata，但 server 不安装；没有 backup rotation/cron、自动更新、自动恢复、监控或 HA。恢复状态检查存在 TOCTOU：管理员必须保持服务停止并阻止并发 writer/start。默认严格 check 缺配置失败；A7.3 增加显式 --offline 基础验收，但不授权生产启动。不能将健康输出当成真实对话能力证明。
 
 ## 21. SI Manager / Next Steps
 
-A7.1 已增加 `si` Textual TUI，复用 A7 helpers/systemd 管理已部署实例；A7.2 增加 `si setup` 并在 Manager 中共享 Reconfigure flow。把 `/opt/si/app/.venv/bin` 加入 SSH 用户 PATH，安装后先 `si setup`，之后 `si`。无自动更新或安装器替代；A7.3 Developer Console 尚未实现。见 [SI Manager](a7_1_si_manager_tui_v01.md) 和 [Setup](a7_2_first_run_setup_v01.md)。
+A7.1 已增加 `si` Textual TUI，复用 A7 helpers/systemd 管理已部署实例；A7.2 增加 `si setup` 并在 Manager 中共享 Reconfigure flow。A7.3 安装固定 /usr/local/bin/si，root/sudo 管理 shell 安装后先 si setup，之后 si。无自动更新；A7.3 已收口 bootstrap 与离线 Linux 验收支持，Developer Console 未实现。见 [SI Manager](a7_1_si_manager_tui_v01.md) 和 [Setup](a7_2_first_run_setup_v01.md)。

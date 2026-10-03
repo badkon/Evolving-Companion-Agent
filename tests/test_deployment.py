@@ -69,6 +69,7 @@ def configured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> DeploymentPat
         "SILICONFLOW_API_KEY": "fake-silicon-key",
         "SI_QQ_BOT_USER_ID": "202",
         "SI_QQ_ALLOWED_USER_IDS": "101",
+        "SI_CHAT_TRANSPORT": "qq",
     }.items():
         monkeypatch.setenv(name, value)
     # The loader will add these; register mutations for fixture teardown.
@@ -131,6 +132,40 @@ def test_fresh_deploy_probe_does_not_create_character_db(
     assert any(not item.ok and item.name == "Runtime DB (read-only)" for item in result)
     assert not configured.database.exists()
     assert not list(configured.database.parent.glob(".si-check-*"))
+
+
+def test_offline_foundation_defers_keys_without_allowing_production_start(
+    configured: DeploymentPaths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deny_network(monkeypatch)
+    for name in (
+        "DEEPSEEK_API_KEY",
+        "SILICONFLOW_API_KEY",
+        "SI_MEMORY_EMBEDDING_API_KEY",
+        "SI_MEMORY_RERANKER_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("SI_CHAT_TRANSPORT", "none")
+    results = check_deployment(configured, offline=True, health=True)
+    assert all(item.ok for item in results)
+    assert any(item.status == "DEFERRED (offline)" for item in results)
+    assert any("NOT INITIALIZED" in item.status for item in results)
+    assert not all(item.ok for item in check_deployment(configured))
+    assert not configured.database.exists()
+    monkeypatch.setenv("SI_MEMORY_EMBEDDING_PROVIDER", "local")
+    assert not all(item.ok for item in check_deployment(configured, offline=True))
+
+
+def test_offline_checks_do_not_hide_corrupt_database_or_invalid_config(
+    configured: DeploymentPaths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    configured.database.write_bytes(b"not sqlite")
+    monkeypatch.setenv("SI_MEMORY_EMBEDDING_DIMENSION", "bad")
+    results = check_deployment(configured, offline=True)
+    assert any(item.name == "SQLite" and not item.ok for item in results)
+    assert any(
+        item.name == "Embedding / Reranker Provider" and not item.ok for item in results
+    )
 
 
 def test_missing_secrets_and_unsupported_transport_are_safe(
@@ -211,9 +246,20 @@ def test_systemd_assets_profile_and_installer_contract() -> None:
     install = (REPO / "deploy/install.sh").read_text()
     assert "if [[ ! -e /opt/si/config/si.env ]]; then" in install
     assert "--locked --no-dev --no-extra local-memory" in install
-    assert "chmod 777" not in install and "curl" not in install and "rm " not in install
+    assert (
+        "chmod 777" not in install
+        and "| bash\n" not in install
+        and "| sh\n" not in install
+    )
     assert "git pull" not in install and "uuid" not in install.lower()
-    for script in ("install.sh", "backup.sh", "restore.sh", "si-service.sh"):
+    for script in (
+        "install.sh",
+        "backup.sh",
+        "restore.sh",
+        "si-service.sh",
+        "si.sh",
+        "validate_linux.sh",
+    ):
         assert b"\r\n" not in (REPO / "deploy" / script).read_bytes()
     project = tomllib.loads((REPO / "pyproject.toml").read_text())
     assert not any(

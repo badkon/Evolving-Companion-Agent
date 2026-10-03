@@ -6,7 +6,7 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — A7.2 First-run Setup v0.1
+## 当前工程状态 — A7.3 Deployment Bootstrap / Linux Validation Support
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
@@ -20,6 +20,8 @@ A6.0：Memory → EmbeddingProvider → Semantic Retrieval → RerankerProvider 
 当前 A4 v0.1 已增加本地 SQLite 当前 Character State，使用 `identity.internal_id` UUID 作为 State 主键；A4.1 添加确定性 elapsed-time transition；A4.2 添加不持久化的显式 Character Event 及其 State Transition 映射。B1 增加统一可注入 UTC Clock，SQLite `character_runtime` 保存最后成功对话时间，Time Snapshot 转换到 Seed 指定的 Character timezone，并向 Prompt 投影本地日期、时间与离线时长。Conversation 的 State elapsed 与 Prompt 共用本轮快照时间。Archive / Memory 等历史存储时间戳仍由 storage 内部系统时钟写入，是当前保留的边界。详见 [A4 Character State / A4.1 State Transition](a4_character_state_v01.md)、[A4.2 Explicit Character Events](a4_2_character_events_v01.md) 与 [B1 Time Model](b1_time_model_v01.md)。当前没有 memory merge/summary；也没有 World/NPC 模拟或自主行为。完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
 
 ## 1. 核心分层
+
+A7.3 收口 install.sh：clean checkout / release / 明确 URL-ref → 账户/目录 → uv locked API-only sync → 稳定 `/usr/local/bin/si` → unit 安装 → 离线检查，不自动启动。validate_linux.sh / linux_validation 使用 si 权限和临时 synthetic SQLite 验证安装与备份/恢复。显式 `--offline` 可延后 keys、接受 None、报告未初始化 DB；默认严格检查与 server 启动要求不变。Setup None 可无密钥保存，仍不可启动。无 Character/World/Memory 新功能；当前仅 Windows 验证，真实 Ubuntu/systemd/reboot 尚待验收。详见 [A7.3](a7_3_real_linux_deployment_validation.md)。
 
 [World Foundation v0.1 Closure](world_foundation_v01_closure.md) 冻结 B4 Places、B5 static NPC、B6 Observation、B7 typed move_to/Resolver 与 B8 Lazy World Time。NPC 普通更新在单个 SQLite 写事务读取最新行，只 patch 显式字段；Life 普通写入使用 initialize-if-missing / transactional partial patch，禁止用低层 full upsert 写回 stale snapshot。B7 幂等仅限当前 DB 保留的 receipt history，旧备份恢复可能移除回执。Observation 的 assistant Archive 复述仍不是完整 World evidence；不引入新来源或自动经历系统。
 
