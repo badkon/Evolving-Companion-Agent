@@ -40,7 +40,9 @@ Linux 服务器运行方式见 [Docker Server Deployment v1](docs/docker_server_
 
 正式 server 支持 `SI_CHAT_TRANSPORT=none`：完成共享 Core 初始化后无聊天常驻，不要求 QQ 配置，SIGINT/Ctrl+C 或 SIGTERM 可正常退出；API keys/provider 配置仍须有效。使用 `python -m evolving_companion.server --env-file config/si.env`；qq 模式保持既有聊天行为。
 
-安装项目后，`si setup` 或 `python -m evolving_companion.setup` 提供通用应用配置向导，默认写入 Git 忽略的 `config/si.env`：masked API key、model、QQ/None transport、Review 和原子保存。向导不启动运行程序。API-only 入口、离线检查和 SQLite-safe backup/restore 的命令及边界见 [Runtime Operations](docs/runtime_operations.md)。离线向导检查：`python scripts/run_setup_smoke.py`。当前不提供自动安装、更新、服务管理或日志面板。
+安装项目后，在项目根目录运行 `si`（或 `python -m evolving_companion.manager`）进入 [SI Manager v0.1](docs/si_manager_v01.md)：Status、Start、Stop、Restart、Logs、Configure、Exit。Native 控制面向 Linux 源码部署，使用当前 Python 启动独立 server 进程；退出 Manager 不停止 Core。它不控制 Docker/systemd，不提供安装、更新、开机自启或崩溃监控。离线 fake/headless 检查：`python scripts/run_si_manager_smoke.py`。修改 console entry 后需重新 `pip install -e .` 更新 `si` 入口。
+
+`si setup` 或 `python -m evolving_companion.setup` 仍提供通用应用配置向导；Manager Configure 复用同一个 SetupScreen，默认写入 Git 忽略的 `config/si.env`：masked API key、model、QQ/None transport、Review 和原子保存。向导不启动运行程序。API-only 入口、离线检查和 SQLite-safe backup/restore 的命令及边界见 [Runtime Operations](docs/runtime_operations.md)。离线向导检查：`python scripts/run_setup_smoke.py`。
 
 A5 已建立离线 QQ 私聊 Adapter Core：安全过滤后仅调用既有 Conversation 的 `send(text)`，角色回复原样返回；不登录 QQ、不启动 SnowLuma、不建立网络连接。设计与运行边界见 [A5 QQ Private Alpha](docs/a5_qq_private_alpha_v01.md)。完全离线检查：`python scripts/run_qq_adapter_smoke.py`。
 

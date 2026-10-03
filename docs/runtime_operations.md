@@ -1,6 +1,6 @@
 # Runtime Configuration / Operations
 
-当前保留可复用的应用能力；Linux Server 可使用 [Docker Compose 运行包装](docker_server_deployment_v1.md)。不提供安装器、自动更新或 Manager 运维面板。
+当前保留可复用的应用能力；Linux Server 可使用 [Docker Compose 运行包装](docker_server_deployment_v1.md)，源码部署可使用 [SI Manager v0.1](si_manager_v01.md) 的 Native 控制。不提供安装器或自动更新；Native Manager 不控制 Docker。
 
 ## 能力分类
 
@@ -8,7 +8,8 @@
 | --- | --- | --- |
 | A 通用应用能力 | API embedding/reranker、API-only inference、SQLite backup/restore 核心、既有 runtime DB 环境配置 | 保留核心行为 |
 | B 旧部署外壳 | installer、账户/ownership、固定安装路径、服务管理/日志面板、shell update、锁定 bootstrap、Linux validation | 删除，无兼容分支 |
-| C 解耦后保留 | Setup、配置模板/加载、Health/Check、API-only server、backup/restore CLI | 使用当前操作者、可指定路径，不控制外部进程 |
+| C 解耦后保留 | Setup、配置模板/加载、Health/Check、API-only server、backup/restore CLI | 使用当前操作者、可指定路径 |
+| D 当前 Native Manager | Status / Start / Stop / Restart / Logs / Configure / Exit | 仅管理自身记录并验证的 Linux server 进程，无旧部署依赖 |
 
 Character / Conversation / Memory / State / Time / World / NPC / Observation / Action / QQ / OneBot 和 provider 核心不因本次清理改变。
 
@@ -17,10 +18,13 @@ Character / Conversation / Memory / State / Time / World / NPC / Observation / A
 标准 pip 安装项目后，在项目根目录运行：
 
 ```bash
+si                 # Manager；q 只退出面板，不停止 Core
 si setup
 # 等价入口
 python -m evolving_companion.setup
 ```
+
+Manager Start / Restart 使用严格 runtime check，none 也是合法模式，但仍需要完整 API 配置；不采用 Setup 的历史 qq-only detection / ready 判定。Status 显示 Character 名称、短 UUID、进程状态、配置、DB、transport 与本地 health；首次 DB 未初始化时 Health 会显示 Error，Start 的配置检查仍可通过。qq 只标记 SnowLuma / OneBot，不检测在线状态。Stop 对已验证进程发 SIGINT，等待最多 15 秒；超时不强杀、不重启。Logs 仅读取最近 64 KiB / 100 行，脱敏后以纯文本展示。详细安全及恢复边界见 [Manager 文档](si_manager_v01.md)。
 
 默认模板 `config/si.env.example` 不含真实秘密；向导默认写入 `config/si.env`，支持 `--env-file` 和 `--project-root`。配置文件及其私有备份已被 Git 忽略。密钥输入 masked、默认保留已有值；Review 不显示秘密，原子保存前保护文件并备份，未知配置行保留。POSIX 下限制文件权限，但不修改账户/ownership。Windows 下目录 ACL 由操作者管理。
 
@@ -51,4 +55,4 @@ python -m evolving_companion.restore /absolute/path/to/backup.db --env-file conf
 
 ## 验证边界
 
-配置、离线检查、SQLite backup/restore 与 Setup 测试使用临时路径、synthetic DB 和 fake keys；`python scripts/run_setup_smoke.py` 仅运行 headless 配置流程，不调用真实 API。Docker 静态测试不要求 daemon，不等同真实服务器运行验收；当前不提供自动安装/重启验收、CI/CD 或发布机制。
+配置、离线检查、SQLite backup/restore、Setup 与 Manager 测试使用临时路径、synthetic DB 和 fake keys；`python scripts/run_setup_smoke.py` 仅运行 headless 配置流程，`python scripts/run_si_manager_smoke.py` 只用 fake RuntimeController，均不调用真实 API。Native 真实进程测试仅在 Linux 使用 synthetic helper，不运行 SI Core；Windows 会跳过。Docker 静态测试不要求 daemon，不等同真实服务器运行验收；Manager fake smoke 也不是 Linux 实机验收。当前不提供自动安装/重启验收、CI/CD 或发布机制。

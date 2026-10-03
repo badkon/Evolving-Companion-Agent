@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-si = "evolving_companion.setup:main"
+si = "evolving_companion.manager:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]

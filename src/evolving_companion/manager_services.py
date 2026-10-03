@@ -1,0 +1,181 @@
+"""Fresh configuration snapshots and local checks; never initialize Core."""
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+from evolving_companion.character_data import load_character_seed_data
+from evolving_companion.config_env import ApplicationEnvService, OperationResult, redact
+from evolving_companion.local_env import PROJECT_ROOT
+from evolving_companion.runtime_config import RuntimePaths, check_sqlite
+from evolving_companion.runtime_control import (
+    NativeProcessController,
+    RuntimeController,
+)
+from evolving_companion.setup_services import SetupService
+
+
+@dataclass(frozen=True)
+class ManagerStatus:
+    character: str
+    internal_identity: str
+    runtime: str
+    configuration: str
+    runtime_db: str
+    transport: str
+    health: str
+
+
+class ManagerService:
+    def __init__(
+        self,
+        env_file: Path,
+        *,
+        project_root: Path | None = None,
+        environment: Mapping[str, str] | None = None,
+        controller: RuntimeController | None = None,
+    ) -> None:
+        self.project = (project_root or PROJECT_ROOT).resolve()
+        self.env_file = env_file.resolve()
+        self.environment = dict(os.environ if environment is None else environment)
+        self.controller = controller
+        self._native: NativeProcessController | None = None
+
+    def effective(self) -> dict[str, str]:
+        service = ApplicationEnvService(
+            self.env_file, self.project / "config/si.env.example"
+        )
+        values = service.read() | self.environment
+        for name in ("SI_MEMORY_EMBEDDING_API_KEY", "SI_MEMORY_RERANKER_API_KEY"):
+            if name not in values:
+                values[name] = values.get("SILICONFLOW_API_KEY", "")
+        return values
+
+    def paths(self) -> RuntimePaths:
+        values = self.effective()
+
+        def path(name: str, default: str) -> Path:
+            candidate = Path(values.get(name, default))
+            return (
+                candidate if candidate.is_absolute() else self.project / candidate
+            ).resolve()
+
+        return RuntimePaths(
+            self.project,
+            self.env_file,
+            path("SI_RUNTIME_DB", "runtime/si_001.db"),
+            path("SI_BACKUP_DIR", "backups"),
+        )
+
+    def backend(self) -> RuntimeController:
+        # File config is re-read, but child receives only the original OS environment.
+        # server.py is the single authoritative env-file loader for the actual runtime.
+        if self.controller is not None:
+            return self.controller
+        paths = self.paths()
+        if self._native is None or self._native.paths != paths:
+            self._native = NativeProcessController(paths, self.environment)
+        return self._native
+
+    def check(self, *, health: bool = False) -> OperationResult:
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "evolving_companion.health"
+                    if health
+                    else "evolving_companion.runtime_check",
+                    "--env-file",
+                    str(self.env_file),
+                    "--project-root",
+                    str(self.project),
+                ],
+                cwd=self.project,
+                env=self.environment,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=45,
+                check=False,
+            )
+            return OperationResult(
+                result.returncode == 0,
+                redact(result.stdout, self.effective()),
+                result.returncode,
+            )
+        except Exception as error:
+            return OperationResult(
+                False, f"Local check unavailable ({type(error).__name__})."
+            )
+
+    def status(self) -> ManagerStatus:
+        values = self.effective()
+        try:
+            seed = load_character_seed_data(
+                self.project / "data/characters/si_001.yaml"
+            )
+            character = f"{seed.identity.working_name} / {seed.identity.development_id}"
+            identity = str(seed.identity.internal_id)[:8] + "…"
+        except Exception:
+            character, identity = "Unavailable", "Unavailable"
+        database = self.paths().database
+        db_status = "Missing"
+        if database.exists():
+            try:
+                check_sqlite(database)
+                db_status = "Available"
+            except Exception:
+                db_status = "Error"
+        check = self.check()
+        config = (
+            "OK"
+            if check.ok
+            else ("Incomplete" if not self.env_file.exists() else "Error")
+        )
+        health = self.check(health=True).ok
+        mode = values.get("SI_CHAT_TRANSPORT", "Missing")
+        transport = "qq — SnowLuma / OneBot" if mode == "qq" else mode
+        return ManagerStatus(
+            redact(character, values),
+            identity,
+            self.backend().status().state,
+            config,
+            db_status,
+            redact(transport, values),
+            "OK (local only)" if health else "Error (local only)",
+        )
+
+    def start(self) -> OperationResult:
+        check = self.check()
+        if not check.ok:
+            return OperationResult(
+                False,
+                "Start blocked: strict runtime configuration check failed. Open Configure.",
+            )
+        return self.backend().start()
+
+    def stop(self) -> OperationResult:
+        return self.backend().stop()
+
+    def restart(self) -> OperationResult:
+        if not self.check().ok:
+            return OperationResult(
+                False,
+                "Restart blocked: strict configuration check failed; running process unchanged.",
+            )
+        return self.backend().restart()
+
+    def logs(self) -> OperationResult:
+        result = self.backend().logs()
+        return OperationResult(
+            result.ok, redact(result.message, self.effective()), result.exit_code
+        )
+
+    def setup_service(self) -> SetupService:
+        return SetupService(
+            self.env_file, environment=self.environment, project_root=self.project
+        )

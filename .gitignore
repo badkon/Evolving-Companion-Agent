@@ -20,6 +20,8 @@ runtime/
 *.db
 *.db-shm
 *.db-wal
+*.process.json
+*.process.lock
 *.sqlite
 *.sqlite3
 
