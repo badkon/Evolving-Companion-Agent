@@ -34,9 +34,9 @@ python -m evolving_companion.health --env-file config/si.env --offline
 python -m evolving_companion.server --env-file config/si.env
 ```
 
-Check 检查可写目录、SQLite 支持/完整性、已有 DB 的 Character UUID 与 seed 一致性、provider 和 transport 配置；不生成 UUID、不创建正式数据库。Health 的严格模式要求已有 DB，offline 模式可报告未初始化。`--offline` 延后 keys、允许 None；默认严格模式需要 keys 和 QQ 配置。两种模式均不调用远端 API，不能证明网络、账号或模型可用性。
+Check 检查可写目录、SQLite 支持/完整性、已有 DB 的 Character UUID 与 seed 一致性、provider 和 transport 配置；不生成 UUID、不创建正式数据库。Health 的严格模式要求已有 DB，offline 模式可报告未初始化。`--offline` 延后 keys；默认严格模式仍需要 provider/LLM keys。qq 模式需要 QQ 配置，none 模式不读取或要求 QQ ID、allowlist、WS URL 或 token。两种检查模式均不调用远端 API，不能证明网络、账号或模型可用性。
 
-`server` 保留 api/api 配置约束，验证通过后调用现有 QQ 入口；不会加载本地 embedding 模型，不负责外部 OneBot 服务。开发 CLI / QQ 的既有 provider 配置和 `.env.local` 行为保持不变。
+`server` 保留 api/api 配置约束，验证通过后根据 `SI_CHAT_TRANSPORT` 分派：qq 使用现有 QQ 入口，none 进入 Core-only long-running server。两者复用 runtime.create_conversation 的同一套 Character/Memory/World 初始化。none 不初始化 QQ/OneBot，不提供 stdin 聊天、不主动调用 API，不推进世界或轮询后台任务；初始化完成后一次事件等待保持进程常驻，SIGINT/Ctrl+C 或 SIGTERM 唤醒退出，恢复 signal handlers 并经 ExitStack 清理已有 provider 资源。SQLite Store 沿用每次操作独立连接的机制。不加载本地 embedding 模型、不负责外部 OneBot 服务；开发 CLI / QQ 的既有 provider 配置和 `.env.local` 行为保持不变。Setup 可无密钥保存 None 配置，但实际 server 启动仍须完整 API 配置。
 
 ## SQLite Backup / Restore
 

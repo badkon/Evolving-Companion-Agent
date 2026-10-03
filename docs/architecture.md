@@ -21,9 +21,9 @@ A6.0：Memory → EmbeddingProvider → Semantic Retrieval → RerankerProvider 
 
 ## 1. 核心分层
 
-Docker Deployment v1 仅提供 Runtime Host：Python 3.12 slim image 在 build 时按 pyproject.toml 安装无 extras 的项目，通过现有 server 入口运行 api/api QQ。Compose 单服务绑定宿主机 config/data（只读）、runtime/backups（可写），不改变 Character 生命周期；Linux host networking 连接外部 OneBot。healthcheck 复用 offline health，不依赖 provider/transport 网络。详细边界见 [Docker Server Deployment](docker_server_deployment_v1.md)，未加入新业务 runtime、发布或自动更新机制。
+Docker Deployment v1 仅提供 Runtime Host：Python 3.12 slim image 在 build 时按 pyproject.toml 安装无 extras 的项目，通过 server 入口运行 api/api。server 按 transport 分派：qq 沿用既有 QQ runtime；none 使用共享 Core 初始化后以 asyncio.Event 等待常驻，SIGINT/SIGTERM 时退出并经 ExitStack 清理资源，不启动 Transport、聊天输入或后台轮询。Compose 单服务绑定宿主机 config/data（只读）、runtime/backups（可写），不改变 Character 生命周期；Linux host networking 连接外部 OneBot（qq 时）。healthcheck 复用 offline health，不依赖 provider/transport 网络。详细边界见 [Docker Server Deployment](docker_server_deployment_v1.md)，未加入新业务 runtime、发布或自动更新机制。
 
-通用应用运维层与 Character Core 分开：`si setup` → SetupScreen → SetupService → ApplicationEnvService；`runtime_config` 提供配置加载、路径和离线检查。默认配置为 `config/si.env`，数据库由 `SI_RUNTIME_DB` 指定，备份目录由 `SI_BACKUP_DIR` 指定；显式环境变量优先。检查不初始化 Character runtime。API-only `server` 入口校验配置后调用已有 QQ 入口，不依赖特定操作系统或服务管理器。当前不提供安装器、更新流程或运维 Manager。详见 [Runtime Operations](runtime_operations.md)。
+通用应用运维层与 Character Core 分开：`si setup` → SetupScreen → SetupService → ApplicationEnvService；`runtime_config` 提供配置加载、路径和离线检查。默认配置为 `config/si.env`，数据库由 `SI_RUNTIME_DB` 指定，备份目录由 `SI_BACKUP_DIR` 指定；显式环境变量优先。检查不初始化 Character runtime。API-only `server` 入口校验配置后选择 qq 或 none；两者复用 runtime.create_conversation，不依赖特定操作系统或服务管理器。当前不提供安装器、更新流程或运维 Manager。详见 [Runtime Operations](runtime_operations.md)。
 
 [World Foundation v0.1 Closure](world_foundation_v01_closure.md) 冻结 B4 Places、B5 static NPC、B6 Observation、B7 typed move_to/Resolver 与 B8 Lazy World Time。NPC 普通更新在单个 SQLite 写事务读取最新行，只 patch 显式字段；Life 普通写入使用 initialize-if-missing / transactional partial patch，禁止用低层 full upsert 写回 stale snapshot。B7 幂等仅限当前 DB 保留的 receipt history，旧备份恢复可能移除回执。Observation 的 assistant Archive 复述仍不是完整 World evidence；不引入新来源或自动经历系统。
 

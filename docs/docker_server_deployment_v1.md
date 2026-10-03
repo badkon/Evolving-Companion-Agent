@@ -23,7 +23,7 @@ cp -n config/si.env.example config/si.env
 chmod 600 config/si.env
 ```
 
-编辑 `config/si.env`，填入 DEEPSEEK_API_KEY、SILICONFLOW_API_KEY，设置 `SI_CHAT_TRANSPORT=qq`、bot user ID、明确的 allowed user IDs 和外部 OneBot WS 地址/可选 token。None 仅可用于离线检查，不是 server 的聊天模式。不要打印配置、把 secrets 写进 Dockerfile 或提交真实配置；容器不加载开发 `.env.local`。
+编辑 `config/si.env`，填入 DEEPSEEK_API_KEY、SILICONFLOW_API_KEY。`SI_CHAT_TRANSPORT=none` 是合法的 Core-only 常驻运行模式：沿用完整 Core 初始化，没有 QQ/OneBot 或终端交互，不要求 QQ ID、allowlist、WS URL 或 token。需要聊天时改为 qq 并配置上述 routing/endpoint/token。两种模式仍校验 API provider 配置，启动不主动请求远端模型。不要打印配置、把 secrets 写进 Dockerfile 或提交真实配置；容器不加载开发 `.env.local`。
 
 现有 runtime_config/config_env 继续生效：容器显式环境变量 > 挂载配置文件。Compose 固定 api/api、数据库 `runtime/si_001.db` 与 `backups` 路径，避免配置指向容器非持久化位置。其他 provider/model 参数沿用模板和既有 API adapter；Docker 不新增 provider。宿主机环境不会自动传入容器；需要显式覆盖时使用 Compose override 的 environment 或一次性 `docker compose run -e NAME=...`，不要提交真实秘密。
 
@@ -42,7 +42,7 @@ docker compose restart si-core
 
 依赖只在 image build 时安装，没有 startup pip install、Git checkout、venv/uv 或服务管理器。基础镜像 Python 3.12 slim，安装项目不带 dev/local-memory extras，因此不安装本地模型依赖或下载模型权重。editable 安装是为了保持当前 `src` layout 的 `/app` seed 资源定位；生产源码由 image 固定提供，不挂载宿主机源码。
 
-默认 command 是 `python -m evolving_companion.server --env-file config/si.env`，校验配置后调用已有 QQ runtime。PID 使用 Compose init 管理；无交互输入，退出后按 unless-stopped 策略重启。错误配置可能重复退出，应查看日志并修正配置。配置文件由应用启动时加载，修改后重启。
+默认 command 是 `python -m evolving_companion.server --env-file config/si.env`，校验配置后分派到已有 QQ runtime 或 none Core-only lifetime；共享相同 Core 初始化。none 用事件等待而非 busy-loop，无 API/Transport 心跳轮询，SIGINT/SIGTERM 时正常退出并清理已有资源。PID 使用 Compose init 管理；无交互输入，退出后按 unless-stopped 策略重启。错误配置可能重复退出，应查看日志并修正配置。配置文件由应用启动时加载，修改后重启。
 
 ### 外部 Transport
 

@@ -163,10 +163,10 @@ def check_runtime(
             )  # Validate only: lazy clients, no requests.
 
     def transport() -> None:
-        if offline and os.environ.get("SI_CHAT_TRANSPORT") == "none":
+        if os.environ.get("SI_CHAT_TRANSPORT") == "none":
             return
         if os.environ.get("SI_CHAT_TRANSPORT") != "qq":
-            raise ValueError("Only the existing qq entry is supported")
+            raise ValueError("SI_CHAT_TRANSPORT must be qq or none")
         _identifier(os.environ.get("SI_QQ_BOT_USER_ID", ""), user=True)
         allowed = [
             item.strip()

@@ -38,6 +38,8 @@ B8 增加 [Lazy World Temporal Context](docs/b8_lazy_world_time_v01.md)：按访
 
 Linux 服务器运行方式见 [Docker Server Deployment v1](docs/docker_server_deployment_v1.md)：准备配置与持久化目录，`docker compose build` 后 `docker compose up -d`。只运行 SI Core，OneBot 是外部接口；不提供一键 installer、自动更新或已发布镜像。
 
+正式 server 支持 `SI_CHAT_TRANSPORT=none`：完成共享 Core 初始化后无聊天常驻，不要求 QQ 配置，SIGINT/Ctrl+C 或 SIGTERM 可正常退出；API keys/provider 配置仍须有效。使用 `python -m evolving_companion.server --env-file config/si.env`；qq 模式保持既有聊天行为。
+
 安装项目后，`si setup` 或 `python -m evolving_companion.setup` 提供通用应用配置向导，默认写入 Git 忽略的 `config/si.env`：masked API key、model、QQ/None transport、Review 和原子保存。向导不启动运行程序。API-only 入口、离线检查和 SQLite-safe backup/restore 的命令及边界见 [Runtime Operations](docs/runtime_operations.md)。离线向导检查：`python scripts/run_setup_smoke.py`。当前不提供自动安装、更新、服务管理或日志面板。
 
 A5 已建立离线 QQ 私聊 Adapter Core：安全过滤后仅调用既有 Conversation 的 `send(text)`，角色回复原样返回；不登录 QQ、不启动 SnowLuma、不建立网络连接。设计与运行边界见 [A5 QQ Private Alpha](docs/a5_qq_private_alpha_v01.md)。完全离线检查：`python scripts/run_qq_adapter_smoke.py`。

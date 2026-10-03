@@ -139,7 +139,7 @@ def test_offline_check_defers_keys_without_allowing_production_start(
 def test_api_only_entry_dispatches_without_loading_development_env(
     configured: RuntimePaths, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from evolving_companion import qq_cli
+    from evolving_companion import qq_cli, runtime
 
     deny_network(monkeypatch)
     calls: list[bool] = []
@@ -153,9 +153,36 @@ def test_api_only_entry_dispatches_without_loading_development_env(
     assert server.main() == 7
     assert calls == [False]
     monkeypatch.setenv("SI_CHAT_TRANSPORT", "none")
+    core_calls: list[bool] = []
+
+    def fake_core_only() -> int:
+        core_calls.append(True)
+        return 0
+
+    monkeypatch.setattr(runtime, "run_core_only", fake_core_only)
+    assert server.main() == 0
+    assert calls == [False] and core_calls == [True]
+    monkeypatch.setenv("SI_CHAT_TRANSPORT", "unsupported")
     assert server.main() == 78
     assert calls == [False]
     assert not configured.database.exists()
+
+
+def test_none_runtime_requires_providers_but_not_qq_configuration(
+    configured: RuntimePaths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deny_network(monkeypatch)
+    monkeypatch.setenv("SI_CHAT_TRANSPORT", "none")
+    for name in (
+        "SI_QQ_BOT_USER_ID",
+        "SI_QQ_ALLOWED_USER_IDS",
+        "SI_ONEBOT_WS_URL",
+        "SI_ONEBOT_ACCESS_TOKEN",
+    ):
+        monkeypatch.setenv(name, "invalid-unused-value")
+    assert all(item.ok for item in check_runtime(configured))
+    monkeypatch.delenv("DEEPSEEK_API_KEY")
+    assert not all(item.ok for item in check_runtime(configured))
 
 
 def test_runtime_paths_have_no_installation_root_assumption(

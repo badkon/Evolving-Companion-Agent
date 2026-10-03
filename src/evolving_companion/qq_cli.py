@@ -4,73 +4,11 @@ import asyncio
 from contextlib import ExitStack
 import logging
 import os
-from pathlib import Path
 
-from evolving_companion.character_data import load_character_seed_data
-from evolving_companion.character_life import CharacterLifeService
-from evolving_companion.character_projection import CharacterProjector
-from evolving_companion.character_state import CharacterStateService
-from evolving_companion.clock import SystemClock
-from evolving_companion.conversation import Conversation
-from evolving_companion.llm import LLMClient
 from evolving_companion.local_env import load_local_env
-from evolving_companion.memory_consolidation import (
-    MemoryConsolidationJudge,
-    MemoryConsolidationService,
-)
-from evolving_companion.memory_extraction import MemoryExtractor
-from evolving_companion.memory_formation import MemoryFormationService
-from evolving_companion.memory_recall import MemoryRecallService
-from evolving_companion.memory_reranker import MemoryReranker
-from evolving_companion.memory_retrieval import MemoryRetriever
-from evolving_companion.memory_provider_config import create_memory_providers
+from evolving_companion.runtime import create_conversation
 from evolving_companion.qq_adapter import QQPrivateChatAdapter, _identifier
 from evolving_companion.qq_transport import OneBotWebSocketTransport
-from evolving_companion.storage import SQLiteStore
-from evolving_companion.observation import ObservationService
-from evolving_companion.world import WorldEntityService, load_world_seed
-from evolving_companion.world_time import WorldTimeService
-
-
-def create_conversation(resources: ExitStack) -> Conversation:
-    root = Path(__file__).resolve().parents[2]
-    seed = load_character_seed_data(root / "data/characters/si_001.yaml")
-    store = SQLiteStore(
-        os.environ.get("SI_RUNTIME_DB", str(root / "runtime/si_001.db"))
-    )
-    clock = SystemClock()
-    for diagnostic in WorldEntityService(store, clock).initialize_seed_entities(
-        load_world_seed(root / "data/worlds/si_world.yaml")
-    ):
-        logging.getLogger(__name__).warning("World migration: %s", diagnostic)
-    life_service = CharacterLifeService(
-        store, seed.identity.internal_id, seed.initial_life_context, clock
-    )
-    life_service.get_life_context(seed.identity.internal_id)
-    embedding_provider, reranker_provider = create_memory_providers(resources)
-    retriever = MemoryRetriever(store, embedding_provider)
-    llm = LLMClient()
-    return Conversation(
-        llm,
-        CharacterProjector().project(seed),
-        store,
-        memory_recall_service=MemoryRecallService(
-            retriever, MemoryReranker(provider=reranker_provider)
-        ),
-        memory_formation_service=MemoryFormationService(
-            MemoryExtractor(llm),
-            store,
-            MemoryConsolidationService(store, retriever, MemoryConsolidationJudge(llm)),
-        ),
-        character_state_service=CharacterStateService(store, clock),
-        character_id=seed.identity.internal_id,
-        character_timezone=seed.timezone,
-        clock=clock,
-        character_life_service=life_service,
-        observation_service=ObservationService(
-            store, clock, world_time_service=WorldTimeService(seed.timezone, clock)
-        ),
-    )
 
 
 def main(*, load_environment: bool = True) -> int:
