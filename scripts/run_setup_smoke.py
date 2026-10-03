@@ -8,26 +8,25 @@ from unittest.mock import patch
 
 from textual.widgets import Button, Input, Select, Static
 
-from evolving_companion.manager_services import OperationResult, SystemdServiceManager
+from evolving_companion.config_env import OperationResult
 from evolving_companion.setup_app import SetupApp, SetupScreen
 from evolving_companion.setup_services import SetupService
 
 
 async def smoke(root: Path) -> None:
     repo = Path(__file__).resolve().parents[1]
-    for directory in ("app/deploy", "app/data/characters", "config", "runtime"):
+    for directory in ("config", "data/characters", "runtime"):
         (root / directory).mkdir(parents=True)
-    template = (repo / "deploy/si.env.example").read_text(encoding="utf-8")
-    (root / "app/deploy/si.env.example").write_text(
-        template.replace("/opt/si", root.as_posix()), encoding="utf-8"
+    template = (repo / "config/si.env.example").read_text(encoding="utf-8")
+    (root / "config/si.env.example").write_text(
+        template.replace("runtime/si_001.db", (root / "runtime/si_001.db").as_posix()),
+        encoding="utf-8",
     )
-    seed = root / "app/data/characters/si_001.yaml"
+    seed = root / "data/characters/si_001.yaml"
     shutil.copyfile(repo / "data/characters/si_001.yaml", seed)
     before = seed.read_bytes()
     env_file = root / "config/si.env"
-    service = SetupService(
-        env_file, SystemdServiceManager({}), {"SI_DEPLOY_ROOT": str(root)}
-    )
+    service = SetupService(env_file, environment={}, project_root=root)
     secrets = {
         "DEEPSEEK_API_KEY": "fake-smoke-deepseek",
         "SILICONFLOW_API_KEY": "fake-smoke-silicon",
@@ -36,7 +35,7 @@ async def smoke(root: Path) -> None:
     with patch.object(
         service,
         "run_checks",
-        return_value=OperationResult(True, "Offline fake deploy_check OK", 0),
+        return_value=OperationResult(True, "Offline fake runtime_check OK", 0),
     ):
         async with app.run_test(size=(100, 45)) as pilot:
             await app.workers.wait_for_complete()
@@ -66,16 +65,16 @@ async def smoke(root: Path) -> None:
             assert all(
                 value not in service.last_result.message for value in secrets.values()
             )
-            screen.query_one("#finish", Button).press()  # Skip optional service start.
+            screen.query_one("#finish", Button).press()  # Finish configuration only.
             await pilot.pause()
             assert not app.is_running
     assert seed.read_bytes() == before
     assert not service.paths.database.exists()
     print(
-        "PASS: missing config, masked fake keys, safe review, atomic save, fake deploy_check, skip start, clean exit."
+        "PASS: missing config, masked fake keys, safe review, atomic save, fake runtime_check, finish, clean exit."
     )
     print(
-        "Temporary config only; no real secrets, runtime DB, network, or systemd used."
+        "Temporary config only; no real secrets, runtime DB, network, or runtime initialization used."
     )
 
 
@@ -83,7 +82,7 @@ if __name__ == "__main__":
     with TemporaryDirectory(prefix="si-setup-smoke-") as directory:
         with (
             patch("socket.create_connection", side_effect=AssertionError("No network")),
-            patch("subprocess.run", side_effect=AssertionError("No systemd/network")),
-            patch("evolving_companion.deployment_env.protect_file"),
+            patch("subprocess.run", side_effect=AssertionError("No network")),
+            patch("evolving_companion.config_env.protect_file"),
         ):
             asyncio.run(smoke(Path(directory)))

@@ -1,10 +1,12 @@
-"""Secret-safe deployment env editing using python-dotenv's existing parser."""
+"""Secret-safe application env editing using python-dotenv's existing parser."""
 
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from io import StringIO
 import json
 import os
+import re
+from dataclasses import dataclass
 from pathlib import Path
 import stat
 import tempfile
@@ -29,12 +31,8 @@ class EnvEditError(RuntimeError):
 
 
 def protect_file(path: Path) -> None:
-    """Only Linux applies si ownership/0600; Windows tests mock this boundary."""
+    """Protect secrets for the current operator; no account or ownership changes."""
     if os.name == "posix":
-        import pwd
-
-        owner = pwd.getpwnam("si")
-        os.chown(path, owner.pw_uid, owner.pw_gid)
         os.chmod(path, 0o600)
 
 
@@ -45,7 +43,7 @@ def parse_env(text: str) -> dict[str, str]:
     return {item.key: item.value or "" for item in bindings if item.key is not None}
 
 
-class DeploymentEnvService:
+class ApplicationEnvService:
     def __init__(self, path: Path, template: Path) -> None:
         self.path, self.template = path, template
 
@@ -63,14 +61,14 @@ class DeploymentEnvService:
             return parse_env(self._text())
         except Exception:
             raise EnvEditError(
-                "Unable to read deployment configuration safely."
+                "Unable to read application configuration safely."
             ) from None
 
     def defaults(self) -> dict[str, str]:
         try:
             return parse_env(self.template.read_text(encoding="utf-8"))
         except Exception:
-            raise EnvEditError("Unable to read deployment template.") from None
+            raise EnvEditError("Unable to read application template.") from None
 
     def get_status(self) -> str:
         if not self.path.exists():
@@ -144,7 +142,7 @@ class DeploymentEnvService:
                 raise EnvEditError("Configuration changed; reopen setup before saving.")
             base = original or self.template.read_text(encoding="utf-8")
             parse_env(base)
-            # Fill absent deployment-profile fields, never overwrite existing paths/unknown keys.
+            # Fill absent application-profile fields, never overwrite existing paths/unknown keys.
             existing = parse_env(base)
             pending = {
                 key: value
@@ -175,3 +173,36 @@ class DeploymentEnvService:
             raise EnvEditError(
                 "Configuration save failed; original file preserved unless replacement completed. Check permissions/concurrent edits."
             ) from None
+
+
+@dataclass(frozen=True)
+class OperationResult:
+    ok: bool
+    message: str
+    exit_code: int | None = None
+
+
+def redact(text: str, environment: Mapping[str, str]) -> str:
+    """Redact configured credentials plus common credential log formats."""
+    secrets = sorted(
+        {
+            value
+            for name, value in environment.items()
+            if value
+            and any(
+                word in name.upper() for word in ("KEY", "TOKEN", "PASSWORD", "SECRET")
+            )
+        },
+        key=len,
+        reverse=True,
+    )
+    for secret in secrets:
+        text = text.replace(secret, "[REDACTED]")
+    text = re.sub(r"(?i)(authorization\s*[:=]\s*).+", r"\1[REDACTED]", text)
+    text = re.sub(
+        r"(?i)((?:[\w-]*(?:api[_-]?key|token|password|secret))\s*[:=]\s*)[^\s,;]+",
+        r"\1[REDACTED]",
+        text,
+    )
+    # Config values must never inject terminal control sequences.
+    return "".join(c for c in text if c in "\n\t" or (c.isprintable() and c != "\x1b"))

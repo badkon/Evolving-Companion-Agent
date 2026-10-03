@@ -1,4 +1,4 @@
-"""Offline deployment checks; no Character initialization or network calls."""
+"""Application configuration and offline checks; no runtime initialization."""
 
 from contextlib import closing, ExitStack
 from dataclasses import dataclass
@@ -6,11 +6,12 @@ from importlib.metadata import version
 import os
 from pathlib import Path
 import sqlite3
-import stat
 from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
+
+from evolving_companion.local_env import PROJECT_ROOT
 
 from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.memory_provider_config import create_memory_providers
@@ -19,31 +20,29 @@ from evolving_companion.world import load_world_seed
 
 
 @dataclass(frozen=True)
-class DeploymentPaths:
-    root: Path
-    app: Path
+class RuntimePaths:
+    project: Path
     env_file: Path
     database: Path
     backups: Path
 
     @classmethod
-    def from_environment(cls, env_file: Path | None = None) -> "DeploymentPaths":
-        root = Path(os.environ.get("SI_DEPLOY_ROOT", "/opt/si")).resolve()
+    def from_environment(
+        cls, env_file: Path | None = None, project_root: Path | None = None
+    ) -> "RuntimePaths":
+        project = (project_root or PROJECT_ROOT).resolve()
         return cls(
-            root,
-            root / "app",
-            env_file or root / "config/si.env",
-            Path(
-                os.environ.get("SI_RUNTIME_DB", str(root / "runtime/si_001.db"))
-            ).resolve(),
-            root / "backups",
+            project,
+            env_file or Path("config/si.env").resolve(),
+            Path(os.environ.get("SI_RUNTIME_DB", "runtime/si_001.db")).resolve(),
+            Path(os.environ.get("SI_BACKUP_DIR", "backups")).resolve(),
         )
 
 
-def load_server_env(path: Path) -> None:
-    """Entry-only loading; systemd env files do NOT expand ${variables}."""
+def load_runtime_env(path: Path) -> None:
+    """Entry-only loading; explicit environment wins, with no interpolation."""
     load_dotenv(path, override=False, interpolate=False)
-    # Deployment template uses one SiliconFlow key; generic adapter remains generic.
+    # Application template uses one SiliconFlow key; generic adapter remains generic.
     key = os.environ.get("SILICONFLOW_API_KEY", "")
     for name in ("SI_MEMORY_EMBEDDING_API_KEY", "SI_MEMORY_RERANKER_API_KEY"):
         if name not in os.environ:
@@ -69,17 +68,6 @@ def check_sqlite(path: Path) -> None:
             raise ValueError("SQLite integrity check failed")
 
 
-def check_env_permissions(path: Path) -> None:
-    if os.name == "posix":
-        info = path.stat()
-        if stat.S_IMODE(info.st_mode) != 0o600:
-            raise PermissionError("Environment file must be 0600")
-        import pwd
-
-        if info.st_uid != pwd.getpwnam("si").pw_uid:
-            raise PermissionError("Environment file must be owned by si")
-
-
 def database_character_ids(path: Path) -> set[str]:
     """Inspect existing Character-owned keys without migrating or initializing."""
     with closing(
@@ -103,8 +91,8 @@ def database_character_ids(path: Path) -> set[str]:
         }
 
 
-def check_deployment(
-    paths: DeploymentPaths, *, health: bool = False, offline: bool = False
+def check_runtime(
+    paths: RuntimePaths, *, health: bool = False, offline: bool = False
 ) -> tuple[CheckResult, ...]:
     results: list[CheckResult] = []
 
@@ -117,29 +105,7 @@ def check_deployment(
         else:
             results.append(CheckResult(name, True, "OK"))
 
-    def required_files() -> None:
-        for path in (
-            paths.app / "pyproject.toml",
-            paths.app / "uv.lock",
-            paths.app / "deploy/systemd/si.service",
-            paths.env_file,
-        ):
-            if not path.is_file():
-                raise FileNotFoundError
-        check_env_permissions(paths.env_file)
-
     def runtime_directory() -> None:
-        configured = os.environ.get("SI_RUNTIME_DB", "")
-        if (
-            not configured
-            or not Path(configured).is_absolute()
-            or Path(configured).resolve() != paths.database
-        ):
-            raise ValueError("Server requires explicit absolute SI_RUNTIME_DB")
-        if not paths.database.is_absolute() or paths.database.is_relative_to(
-            paths.app.resolve()
-        ):
-            raise ValueError("Runtime DB must be outside app")
         if not paths.database.parent.is_dir():
             raise FileNotFoundError
         # Probe actual write permission and SQLite creation without touching runtime DB.
@@ -159,7 +125,7 @@ def check_deployment(
             runtime_directory()
 
     def identity_binding() -> None:
-        seed = load_character_seed_data(paths.app / "data/characters/si_001.yaml")
+        seed = load_character_seed_data(paths.project / "data/characters/si_001.yaml")
         if not paths.database.exists():
             return
         if database_character_ids(paths.database) - {str(seed.identity.internal_id)}:
@@ -223,10 +189,10 @@ def check_deployment(
             raise ValueError("Invalid transport endpoint")
         _ = url.port  # Validate numeric port without making a connection.
 
-    check("Required Files / Env Permissions", required_files)
     check("Character Seed / Identity", identity_binding)
     check(
-        "World Seed", lambda: load_world_seed(paths.app / "data/worlds/si_world.yaml")
+        "World Seed",
+        lambda: load_world_seed(paths.project / "data/worlds/si_world.yaml"),
     )
     check("Runtime Directory / Writable SQLite Probe", runtime_directory)
     if offline and health and not paths.database.exists():

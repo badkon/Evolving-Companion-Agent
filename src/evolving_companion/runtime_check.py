@@ -1,4 +1,4 @@
-"""Offline environment health, not a network/transport availability probe."""
+"""Offline application configuration check."""
 
 import argparse
 from pathlib import Path
@@ -17,7 +17,7 @@ def main() -> int:
     parser.add_argument(
         "--offline",
         action="store_true",
-        help="Foundation health; a missing runtime DB is reported, not created",
+        help="Check configuration without API keys; does not validate network availability",
     )
     parser.add_argument(
         "--project-root", type=Path, help="Root containing the existing seed data"
@@ -28,12 +28,11 @@ def main() -> int:
         return print_checks(
             check_runtime(
                 RuntimePaths.from_environment(args.env_file, args.project_root),
-                health=True,
                 offline=args.offline,
             )
         )
     except Exception as error:
-        print(f"Health configuration FAILED ({type(error).__name__})")
+        print(f"Application configuration FAILED ({type(error).__name__})")
         return 1
 
 

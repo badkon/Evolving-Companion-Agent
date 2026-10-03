@@ -10,13 +10,14 @@ import sys
 from urllib.parse import urlsplit
 
 from evolving_companion.character_data import load_character_seed_data
-from evolving_companion.deployment import DeploymentPaths
-from evolving_companion.deployment_env import (
-    DeploymentEnvService,
+from evolving_companion.runtime_config import RuntimePaths
+from evolving_companion.config_env import (
+    ApplicationEnvService,
     EnvEditError,
     SECRET_FIELDS,
 )
-from evolving_companion.manager_services import OperationResult, ServiceManager, redact
+from evolving_companion.config_env import OperationResult, redact
+from evolving_companion.local_env import PROJECT_ROOT
 from evolving_companion.qq_adapter import _identifier
 
 
@@ -39,27 +40,22 @@ class SetupService:
     def __init__(
         self,
         env_file: Path,
-        service: ServiceManager,
         environment: Mapping[str, str] | None = None,
+        project_root: Path | None = None,
     ) -> None:
         # Capture explicit OS variables BEFORE entry loads any env file.
         self.environment = dict(os.environ if environment is None else environment)
-        self.service = service
-        root = Path(self.environment.get("SI_DEPLOY_ROOT", "/opt/si")).resolve()
-        self.env = DeploymentEnvService(env_file, root / "app/deploy/si.env.example")
+        project = (project_root or PROJECT_ROOT).resolve()
+        self.env = ApplicationEnvService(env_file, project / "config/si.env.example")
         self._original = self.env._text()
         self._existing = self.env.read()
         self._defaults = self.env.defaults()
         effective = self._defaults | self._existing | self.environment
-        root = Path(effective.get("SI_DEPLOY_ROOT", str(root))).resolve()
-        self.paths = DeploymentPaths(
-            root,
-            root / "app",
+        self.paths = RuntimePaths(
+            project,
             env_file,
-            Path(
-                effective.get("SI_RUNTIME_DB", str(root / "runtime/si_001.db"))
-            ).resolve(),
-            root / "backups",
+            Path(effective.get("SI_RUNTIME_DB", "runtime/si_001.db")).resolve(),
+            Path(effective.get("SI_BACKUP_DIR", "backups")).resolve(),
         )
         self.last_result = SetupResult(False, False, "Not saved.")
 
@@ -74,11 +70,13 @@ class SetupService:
         status = self.env.get_status()
         if status == "Configured" and not self.run_checks().ok:
             status = "Incomplete"
-        seed = load_character_seed_data(self.paths.app / "data/characters/si_001.yaml")
+        seed = load_character_seed_data(
+            self.paths.project / "data/characters/si_001.yaml"
+        )
         message = (
-            "Existing deployment configuration detected."
+            "Existing application configuration detected."
             if status == "Configured"
-            else f"Deployment configuration: {status}."
+            else f"Application configuration: {status}."
         )
         return SetupDetection(
             status,
@@ -177,9 +175,11 @@ class SetupService:
             arguments = [
                 sys.executable,
                 "-m",
-                "evolving_companion.deploy_check",
+                "evolving_companion.runtime_check",
                 "--env-file",
                 str(self.env.path),
+                "--project-root",
+                str(self.paths.project),
             ]
             if self.effective().get("SI_CHAT_TRANSPORT") == "none":
                 arguments.append("--offline")
@@ -197,7 +197,7 @@ class SetupService:
             return OperationResult(
                 result.returncode == 0,
                 redact(result.stdout, self.effective()).strip()
-                or "Deployment check failed; check local files/permissions.",
+                or "Application check failed; check local files/permissions.",
                 result.returncode,
             )
         except Exception as error:
@@ -205,12 +205,13 @@ class SetupService:
                 "Setup check failed (%s)", type(error).__name__
             )
             return OperationResult(
-                False, "Deployment check unavailable; configuration remains saved."
+                False, "Application check unavailable; configuration remains saved."
             )
 
     def save(self, values: Mapping[str, str]) -> SetupResult:
         try:
             self.validate(values)
+            self.env.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             backup = self.env.update(values, expected=self._original)
             self._existing = self.env.read()
             self._original = self.env._text()
@@ -230,7 +231,7 @@ class SetupService:
             " Existing configuration backed up." if backup else ""
         )
         if no_transport:
-            message += "\nService cannot start until a transport is configured."
+            message += "\nNo chat transport configured."
         if any(key in self.environment for key in values):
             message += "\nExplicit OS/environment overrides remain in effect."
         self.last_result = SetupResult(
@@ -242,43 +243,3 @@ class SetupService:
             + "\nConnectivity tests are not part of setup v0.1.",
         )
         return self.last_result
-
-    def start(self, *, confirmed: bool = False) -> OperationResult:
-        if not confirmed or not self.last_result.saved or not self.last_result.ready:
-            return OperationResult(
-                False, "Save configuration and pass deploy_check before optional start."
-            )
-        if not self.run_checks().ok:
-            return OperationResult(
-                False,
-                "Configuration saved successfully. Service start blocked: deploy_check failed.",
-            )
-        try:
-            result = self.service.start()
-            return OperationResult(
-                result.ok,
-                "Configuration saved successfully.\n"
-                + (
-                    "Service started."
-                    if result.ok
-                    else "Service start failed. "
-                    + redact(result.message, self.effective())
-                ),
-                result.exit_code,
-            )
-        except Exception:
-            return OperationResult(
-                False,
-                "Configuration saved successfully. Service start failed; sudo/systemd permission required.",
-            )
-
-    def refresh_process_environment(self) -> None:
-        # Manager only: apply saved file to process, retaining original explicit overrides.
-        effective = self.effective()
-        for name in (
-            self._existing.keys()
-            | self._defaults.keys()
-            | {"SI_MEMORY_EMBEDDING_API_KEY", "SI_MEMORY_RERANKER_API_KEY"}
-        ):
-            if name not in self.environment and name in effective:
-                os.environ[name] = effective[name]

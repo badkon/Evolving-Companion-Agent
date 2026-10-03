@@ -1,4 +1,4 @@
-"""Shared first-run/reconfiguration Screen. No direct filesystem or systemd I/O."""
+"""Application configuration Screen. No direct filesystem or runtime startup I/O."""
 
 import asyncio
 import logging
@@ -9,7 +9,7 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input, Select, Static
 
-from evolving_companion.deployment_env import SECRET_FIELDS
+from evolving_companion.config_env import SECRET_FIELDS
 from evolving_companion.setup_services import SetupService
 
 
@@ -36,7 +36,9 @@ class SetupScreen(Screen[bool]):
         yield Header()
         with VerticalScroll(id="setup-body"):
             yield Static(
-                "First-run Setup — Deployment only", id="welcome", markup=False
+                "First-run Setup — Application configuration",
+                id="welcome",
+                markup=False,
             )
             with Horizontal(id="welcome-actions"):
                 yield Button("Review", id="existing-review")
@@ -65,7 +67,7 @@ class SetupScreen(Screen[bool]):
                     yield Input(id=f"value-{name}")
                 yield Static("Transport: QQ / None", markup=False)
                 yield Select(
-                    [("QQ OneBot", "qq"), ("None — 暂不启动服务", "none")],
+                    [("QQ OneBot", "qq"), ("None — 暂不配置聊天连接", "none")],
                     value="none",
                     allow_blank=False,
                     id="transport",
@@ -92,7 +94,6 @@ class SetupScreen(Screen[bool]):
             with VerticalScroll(id="summary"):
                 yield Static("", id="summary-text", markup=False)
                 with Horizontal():
-                    yield Button("Yes — Start SI service now", id="start-service")
                     yield Button("No / Finish", id="finish")
             yield Static("", id="setup-error", markup=False)
         yield Footer()
@@ -180,7 +181,7 @@ class SetupScreen(Screen[bool]):
             "Setup operation failed (%s)", type(error).__name__
         )
         self.query_one("#setup-error", Static).update(
-            f"操作失败 ({type(error).__name__})；检查配置字段、文件权限或部署资产。"
+            f"操作失败 ({type(error).__name__})；检查配置字段、文件权限或应用配置。"
         )
 
     @work
@@ -192,25 +193,9 @@ class SetupScreen(Screen[bool]):
             result = await asyncio.to_thread(self.service.save, self.pending)
             self.saved = result.saved
             self.query_one("#summary-text", Static).update(result.message)
-            self.query_one("#start-service", Button).display = (
-                result.saved and result.ready
-            )
             self._show("summary")
             self.query_one("#finish", Button).focus()  # Never auto-start.
             self._clear_secrets()
-        except Exception as error:
-            self._error(error)
-        finally:
-            self.busy = False
-
-    @work
-    async def start_service(self) -> None:
-        if self.busy:
-            return
-        self.busy = True
-        try:
-            result = await asyncio.to_thread(self.service.start, confirmed=True)
-            self.query_one("#summary-text", Static).update(result.message)
         except Exception as error:
             self._error(error)
         finally:
@@ -241,8 +226,6 @@ class SetupScreen(Screen[bool]):
                 self._review(existing=action == "existing-review")
             elif action == "save":
                 self.save_config()
-            elif action == "start-service":
-                self.start_service()
         except Exception as error:
             self._error(error)
 

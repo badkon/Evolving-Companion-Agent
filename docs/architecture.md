@@ -6,7 +6,7 @@
 
 尚未确定的技术选择应明确标记，不将候选方案描述为最终决定。
 
-## 当前工程状态 — A7.3 Deployment Bootstrap / Linux Validation Support
+## 当前工程状态 — Runtime Configuration / Operations
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
@@ -21,15 +21,11 @@ A6.0：Memory → EmbeddingProvider → Semantic Retrieval → RerankerProvider 
 
 ## 1. 核心分层
 
-A7.3 收口 install.sh：clean checkout / release / 明确 URL-ref → 账户/目录 → uv locked API-only sync → 稳定 `/usr/local/bin/si` → unit 安装 → 离线检查，不自动启动。validate_linux.sh / linux_validation 使用 si 权限和临时 synthetic SQLite 验证安装与备份/恢复。显式 `--offline` 可延后 keys、接受 None、报告未初始化 DB；默认严格检查与 server 启动要求不变。Setup None 可无密钥保存，仍不可启动。无 Character/World/Memory 新功能；当前仅 Windows 验证，真实 Ubuntu/systemd/reboot 尚待验收。详见 [A7.3](a7_3_real_linux_deployment_validation.md)。
+通用应用运维层与 Character Core 分开：`si setup` → SetupScreen → SetupService → ApplicationEnvService；`runtime_config` 提供配置加载、路径和离线检查。默认配置为 `config/si.env`，数据库由 `SI_RUNTIME_DB` 指定，备份目录由 `SI_BACKUP_DIR` 指定；显式环境变量优先。检查不初始化 Character runtime。API-only `server` 入口校验配置后调用已有 QQ 入口，不依赖特定操作系统或服务管理器。当前不提供安装器、更新流程或运维 Manager。详见 [Runtime Operations](runtime_operations.md)。
 
 [World Foundation v0.1 Closure](world_foundation_v01_closure.md) 冻结 B4 Places、B5 static NPC、B6 Observation、B7 typed move_to/Resolver 与 B8 Lazy World Time。NPC 普通更新在单个 SQLite 写事务读取最新行，只 patch 显式字段；Life 普通写入使用 initialize-if-missing / transactional partial patch，禁止用低层 full upsert 写回 stale snapshot。B7 幂等仅限当前 DB 保留的 receipt history，旧备份恢复可能移除回执。Observation 的 assistant Archive 复述仍不是完整 World evidence；不引入新来源或自动经历系统。
 
-A7.2 `si setup` / Manager Reconfigure 共用 SetupScreen → SetupService → DeploymentEnvService 与 A7 deploy_check、A7.1 SystemdServiceManager。只写白名单部署配置，masked key 默认保留、private backup/atomic replace、未知字段保留，路径/identity 只读；无 Character reset、DB schema/运行逻辑改变。离线检查在新本地进程复用现有入口，避开旧 file-derived 环境。Transport None 可以保存但不启动服务。详见 [A7.2 Setup](a7_2_first_run_setup_v01.md)。
-
-A7.1 仅增加 Deployment/Operations UI：`si` → Textual SIManagerApp → DeploymentFacade / SystemdServiceManager → A7 helpers / systemd。配置只读白名单，secret 仅配置状态；恢复须确认并复用 A7 stopped/UUID/pre_restore 保护。阻塞操作经 worker thread，全部离线，不进入 Character Core、Prompt、Memory 或 transport 链。详见 [A7.1 SI Manager](a7_1_si_manager_tui_v01.md)。
-
-A7 Deployment Layer 与 Character Core 分开：server entry 按 SI_CHAT_TRANSPORT 选择已有 QQ 入口，使用外部 `/opt/si/config/si.env` 和 `SI_RUNTIME_DB=/opt/si/runtime/si_001.db`，不读取开发 `.env.local`。SQLiteStore 的显式 path 优先；未配置时保持开发默认。systemd 以 si 用户运行，uv.lock 锁定 API-only 环境；离线检查不初始化 seed/runtime，不生成 UUID。备份/恢复使用 sqlite3 backup，恢复前要求停止服务并保护当前 DB。config/runtime/backups 不随 checkout 更新，Device Migration ≠ Character Reset。完整配置、复用评估、安全与验证限制见 [A7 Deployment Foundation](a7_deployment_foundation_v01.md)。A7.1 Manager 在独立运维层；未实现自动更新或新 Transport 框架。
+Setup 仅写白名单应用配置：masked key 默认保留、private backup/atomic replace、未知字段保留，路径/identity 只读。保存后在隔离本地进程检查，不启动服务；Transport None 可无密钥保存。SQLite backup/restore 保留完整数据库和身份校验，恢复前需要操作者停止全部数据库写入者并显式确认，先生成 pre_restore 备份；工具不管理外部进程。Device Migration ≠ Character Reset。
 
 Conversation 的主回复完成边界为 user Archive、LLM 回复和 assistant Archive 均成功。assistant Archive 后先更新 in-memory history，再独立 best-effort 写入 last interaction、执行 Memory Formation / Consolidation；这些派生操作失败不影响已归档主回复。时间写入失败仅保留异常类型诊断 `last_interaction_error`，数据库锚点允许暂时滞后，不写虚假 fallback 时间。LLM 或 assistant Archive 失败仍中断本轮，不追加 completed history、不更新时间、不执行 formation。
 

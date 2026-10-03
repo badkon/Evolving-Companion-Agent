@@ -1,36 +1,24 @@
-"""Explicit stopped-service restore with a mandatory pre-restore backup."""
+"""Explicit stopped-writer restore with a mandatory pre-restore backup."""
 
 import argparse
 from contextlib import closing
 from pathlib import Path
 import sqlite3
-import subprocess
 
 from evolving_companion.backup import backup_database
-from evolving_companion.deployment import (
-    DeploymentPaths,
+from evolving_companion.runtime_config import (
+    RuntimePaths,
     check_sqlite,
-    load_server_env,
+    load_runtime_env,
     database_character_ids,
 )
 
 
-def service_is_stopped() -> bool:
-    result = subprocess.run(
-        ["systemctl", "show", "si.service", "--property=ActiveState", "--value"],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=10,
-    )
-    return result.returncode == 0 and result.stdout.strip() in {"inactive", "failed"}
-
-
 def restore_database(
-    backup: Path, database: Path, backup_dir: Path, *, service_stopped: bool
+    backup: Path, database: Path, backup_dir: Path, *, writers_stopped: bool
 ) -> Path:
-    if not service_stopped:
-        raise ValueError("Stop si.service before restoring")
+    if not writers_stopped:
+        raise ValueError("Stop all database writers before restoring")
     backup, database = backup.resolve(), database.resolve()
     if backup == database:
         raise ValueError("Backup must differ from runtime database")
@@ -49,16 +37,21 @@ def restore_database(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("backup", type=Path)
-    parser.add_argument("--env-file", type=Path, default=Path("/opt/si/config/si.env"))
+    parser.add_argument("--env-file", type=Path, default=Path("config/si.env"))
+    parser.add_argument(
+        "--writers-stopped",
+        action="store_true",
+        help="Explicit confirmation that ALL database writers are stopped",
+    )
     args = parser.parse_args()
     try:
-        load_server_env(args.env_file)
-        paths = DeploymentPaths.from_environment(args.env_file)
+        load_runtime_env(args.env_file)
+        paths = RuntimePaths.from_environment(args.env_file)
         pre_restore = restore_database(
             args.backup,
             paths.database,
             paths.backups,
-            service_stopped=service_is_stopped(),
+            writers_stopped=args.writers_stopped,
         )
         print(f"Restore completed; previous database preserved: {pre_restore}")
     except Exception as error:

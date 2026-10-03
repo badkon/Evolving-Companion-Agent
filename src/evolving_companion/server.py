@@ -1,32 +1,28 @@
-"""Deployment entry selecting the existing transport, not a transport framework."""
+"""API-only application entry selecting the existing QQ transport."""
 
-import os
-import sys
+import argparse
 from pathlib import Path
-
-from evolving_companion.deployment import (
-    DeploymentPaths,
-    check_deployment,
-    load_server_env,
+from evolving_companion.runtime_config import (
+    RuntimePaths,
+    check_runtime,
+    load_runtime_env,
     print_checks,
 )
 
 
 def main() -> int:
-    if sys.platform != "linux" or os.geteuid() == 0:
-        print("Server Core requires a non-root Linux user (si).")
-        return 78
-    env_file = Path("/opt/si/config/si.env")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--env-file", type=Path, default=Path("config/si.env"))
+    args = parser.parse_args()
     try:
-        load_server_env(env_file)
-        valid = (
-            print_checks(check_deployment(DeploymentPaths.from_environment(env_file)))
-            == 0
-        )
+        load_runtime_env(args.env_file)
+        if (
+            print_checks(check_runtime(RuntimePaths.from_environment(args.env_file)))
+            != 0
+        ):
+            return 78
     except Exception as error:
-        print(f"Server configuration FAILED ({type(error).__name__})")
-        return 78
-    if not valid:
+        print(f"Application configuration FAILED ({type(error).__name__})")
         return 78
     from evolving_companion.qq_cli import main as run_qq
 

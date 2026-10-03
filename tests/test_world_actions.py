@@ -101,7 +101,7 @@ def test_restore_before_action_removes_receipt_and_resolves_again(
         receipt_count(env) == 1
         and current(env).current_location_entity_id == env.school
     )
-    restore_database(backup, env.store.path, tmp_path / "backups", service_stopped=True)
+    restore_database(backup, env.store.path, tmp_path / "backups", writers_stopped=True)
     assert (
         receipt_count(env) == 0 and current(env).current_location_entity_id == env.home
     )

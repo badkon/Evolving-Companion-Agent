@@ -7,7 +7,11 @@ import os
 from pathlib import Path
 import sqlite3
 
-from evolving_companion.deployment import DeploymentPaths, check_sqlite, load_server_env
+from evolving_companion.runtime_config import (
+    RuntimePaths,
+    check_sqlite,
+    load_runtime_env,
+)
 
 
 def backup_database(
@@ -38,11 +42,11 @@ def backup_database(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env-file", type=Path, default=Path("/opt/si/config/si.env"))
+    parser.add_argument("--env-file", type=Path, default=Path("config/si.env"))
     args = parser.parse_args()
     try:
-        load_server_env(args.env_file)
-        paths = DeploymentPaths.from_environment(args.env_file)
+        load_runtime_env(args.env_file)
+        paths = RuntimePaths.from_environment(args.env_file)
         print(f"Backup created: {backup_database(paths.database, paths.backups)}")
     except Exception as error:
         print(

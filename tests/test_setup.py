@@ -1,4 +1,4 @@
-"""First-run setup tests use fake secrets, temporary paths, and no real systemd."""
+"""First-run setup tests use fake secrets, temporary paths, and no network."""
 
 import asyncio
 from pathlib import Path
@@ -12,18 +12,13 @@ import httpx
 import pytest
 from textual.widgets import Button, Input, Select, Static
 
-from evolving_companion import deployment_env, manager, setup_services
-from evolving_companion.deployment_env import (
-    DeploymentEnvService,
+from evolving_companion import config_env, setup as setup_entry, setup_services
+from evolving_companion.config_env import (
+    ApplicationEnvService,
     EnvEditError,
     parse_env,
 )
-from evolving_companion.manager_app import SIManagerApp
-from evolving_companion.manager_services import (
-    DeploymentFacade,
-    OperationResult,
-    ServiceStatus,
-)
+from evolving_companion.config_env import OperationResult
 from evolving_companion.setup_app import SetupApp, SetupScreen
 from evolving_companion.setup_services import SetupService
 
@@ -32,59 +27,59 @@ KEYS = {
     "SILICONFLOW_API_KEY": "fake-silicon-secret",
     "SI_ONEBOT_ACCESS_TOKEN": "fake-onebot-token",
 }
-REAL_PROTECT_FILE = deployment_env.protect_file
 
 
-class FakeSystemd:
-    def __init__(self) -> None:
-        self.starts = 0
+def test_setup_cli_is_cross_platform_and_never_starts_runtime(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from evolving_companion import setup_app
 
-    def status(self) -> ServiceStatus:
-        return ServiceStatus("Stopped", OperationResult(True, "inactive", 0))
-
-    def start(self) -> OperationResult:
-        self.starts += 1
-        return OperationResult(False, "permission denied / sudo required", 1)
-
-    def stop(self) -> OperationResult:
-        return OperationResult(True, "stopped", 0)
-
-    def restart(self) -> OperationResult:
-        return OperationResult(True, "restarted", 0)
-
-    def recent_logs(self) -> OperationResult:
-        return OperationResult(True, "fake journal", 0)
+    calls = []
+    monkeypatch.setattr(
+        setup_entry,
+        "SetupService",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(setup_app.SetupApp, "run", lambda self: None)
+    monkeypatch.setattr(
+        sys, "argv", ["si", "setup", "--env-file", str(tmp_path / "si.env")]
+    )
+    assert setup_entry.main() == 0
+    assert calls[0][0] == (tmp_path / "si.env",)
+    monkeypatch.setattr(sys, "argv", ["si", "--help"])
+    with pytest.raises(SystemExit) as error:
+        setup_entry.main()
+    assert error.value.code == 0
 
 
 @pytest.fixture(autouse=True)
 def offline(monkeypatch: pytest.MonkeyPatch) -> None:
     def forbidden(*args, **kwargs):
-        raise AssertionError("No real network or systemd in setup tests")
+        raise AssertionError("No real network in setup tests")
 
     monkeypatch.setattr(socket, "create_connection", forbidden)
     monkeypatch.setattr(httpx.Client, "request", forbidden)
     monkeypatch.setattr(httpx.Client, "send", forbidden)
     monkeypatch.setattr(setup_services.subprocess, "run", forbidden)
-    # No chmod/chown/Linux users in Windows/CI fixtures.
-    monkeypatch.setattr(deployment_env, "protect_file", lambda path: None)
+    # Inspect file protection separately from configuration behavior.
+    monkeypatch.setattr(config_env, "protect_file", lambda path: None)
 
 
 @pytest.fixture
 def setup(tmp_path: Path) -> SetupService:
     root = tmp_path / "si"
-    for directory in ("app/deploy", "app/data/characters", "config", "runtime"):
+    for directory in ("config", "data/characters", "runtime"):
         (root / directory).mkdir(parents=True)
     repo = Path(__file__).resolve().parents[1]
-    template = (repo / "deploy/si.env.example").read_text(encoding="utf-8")
-    (root / "app/deploy/si.env.example").write_text(
-        template.replace("/opt/si", root.as_posix()), encoding="utf-8"
+    template = (repo / "config/si.env.example").read_text(encoding="utf-8")
+    (root / "config/si.env.example").write_text(
+        template.replace("runtime/si_001.db", (root / "runtime/si_001.db").as_posix()),
+        encoding="utf-8",
     )
     shutil.copyfile(
-        repo / "data/characters/si_001.yaml", root / "app/data/characters/si_001.yaml"
+        repo / "data/characters/si_001.yaml", root / "data/characters/si_001.yaml"
     )
-    return SetupService(
-        root / "config/si.env", FakeSystemd(), {"SI_DEPLOY_ROOT": str(root)}
-    )
+    return SetupService(root / "config/si.env", environment={}, project_root=root)
 
 
 def updates() -> dict[str, str]:
@@ -101,7 +96,7 @@ def fake_check(
     calls: list[str] = []
 
     def check() -> OperationResult:
-        calls.append("deploy_check")
+        calls.append("runtime_check")
         return OperationResult(
             ok, "SQLite OK" if ok else "Transport ERROR", 0 if ok else 1
         )
@@ -116,12 +111,14 @@ def test_missing_incomplete_configured_detection(
     assert setup.detect().status == "Missing"
     setup.env.path.write_text("DEEPSEEK_API_KEY=\n", encoding="utf-8")
     assert setup.detect().status == "Incomplete"
-    setup = SetupService(setup.env.path, setup.service, setup.environment)
+    setup = SetupService(
+        setup.env.path, environment=setup.environment, project_root=setup.paths.project
+    )
     fake_check(monkeypatch, setup)
     assert setup.save(updates()).saved
     detection = setup.detect()
     assert detection.status == "Configured"
-    assert "Existing deployment configuration detected" in detection.message
+    assert "Existing application configuration detected" in detection.message
     assert "will be preserved" in detection.message
     assert len(detection.internal_identity) == 9
 
@@ -157,9 +154,9 @@ def test_unknown_fields_comments_quotes_backup_atomic_permissions(
     original = "# custom comment\nUNKNOWN='keep # exactly' # suffix\nEMPTY=\nDEEPSEEK_API_KEY=\n"
     setup.env.path.write_text(original, encoding="utf-8")
     protection: list[Path] = []
-    monkeypatch.setattr(deployment_env, "protect_file", protection.append)
+    monkeypatch.setattr(config_env, "protect_file", protection.append)
     replacements = []
-    replace = deployment_env.os.replace
+    replace = config_env.os.replace
 
     def atomic(source, target):
         replacements.append((source, target))
@@ -168,7 +165,7 @@ def test_unknown_fields_comments_quotes_backup_atomic_permissions(
         assert Path(target).read_text(encoding="utf-8") == original
         replace(source, target)
 
-    monkeypatch.setattr(deployment_env.os, "replace", atomic)
+    monkeypatch.setattr(config_env.os, "replace", atomic)
     secret = 'fake "quoted" \\ token # literal ${UNCHANGED}'
     backup = setup.env.update({"DEEPSEEK_API_KEY": secret}, expected=original)
     assert backup is not None and backup in protection
@@ -216,7 +213,7 @@ def test_concurrent_edit_and_atomic_failure_preserve_original(
     def fail(*args):
         raise PermissionError(KEYS["DEEPSEEK_API_KEY"])
 
-    monkeypatch.setattr(deployment_env.os, "replace", fail)
+    monkeypatch.setattr(config_env.os, "replace", fail)
     with pytest.raises(EnvEditError) as error:
         setup.env.update(KEYS, expected=setup.env._text())
     assert KEYS["DEEPSEEK_API_KEY"] not in str(error.value)
@@ -228,37 +225,15 @@ def test_concurrent_edit_and_atomic_failure_preserve_original(
 def test_setup_preserves_identity_database_and_runtime_path(
     setup: SetupService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    seed = setup.paths.app / "data/characters/si_001.yaml"
+    seed = setup.paths.project / "data/characters/si_001.yaml"
     before_seed = seed.read_bytes()
     setup.paths.database.write_bytes(b"synthetic runtime marker; never initialize")
     before_db = setup.paths.database.read_bytes()
     calls = fake_check(monkeypatch, setup)
     result = setup.save(updates())
-    assert result.saved and result.ready and calls == ["deploy_check"]
+    assert result.saved and result.ready and calls == ["runtime_check"]
     assert seed.read_bytes() == before_seed
     assert setup.paths.database.read_bytes() == before_db
-
-
-def test_none_transport_check_failure_and_optional_start(
-    setup: SetupService, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_check(monkeypatch, setup, ok=False)
-    result = setup.save(KEYS | {"SI_CHAT_TRANSPORT": "none"})
-    assert result.saved and not result.ready and "cannot start" in result.message
-    assert "Transport ERROR" in result.message
-    assert not setup.start(confirmed=True).ok
-
-
-def test_optional_start_permission_failure_is_safe(
-    setup: SetupService, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls = fake_check(monkeypatch, setup)
-    assert setup.save(updates()).ready
-    assert not setup.start().ok
-    result = setup.start(confirmed=True)
-    assert not result.ok and "Configuration saved successfully" in result.message
-    assert "Service start failed" in result.message and "sudo" in result.message
-    assert len(calls) == 2
 
 
 def test_check_command_isolated_env_and_redacted_output(
@@ -278,16 +253,18 @@ def test_check_command_isolated_env_and_redacted_output(
     assert args == [
         sys.executable,
         "-m",
-        "evolving_companion.deploy_check",
+        "evolving_companion.runtime_check",
         "--env-file",
         str(setup.env.path),
+        "--project-root",
+        str(setup.paths.project),
         "--offline",
     ]
     assert options["env"] == setup.environment and "shell" not in options
     assert all(value not in repr(args) for value in KEYS.values())
 
 
-def test_none_can_save_without_keys_but_cannot_start(
+def test_none_can_save_without_keys(
     setup: SetupService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_check(monkeypatch, setup)
@@ -295,33 +272,19 @@ def test_none_can_save_without_keys_but_cannot_start(
     assert result.saved and not result.ready
     assert setup.env.read()["DEEPSEEK_API_KEY"] == ""
     assert setup.env.read()["SILICONFLOW_API_KEY"] == ""
-    assert not setup.start(confirmed=True).ok
     with pytest.raises(EnvEditError, match="keys are required"):
         setup.validate({"SI_CHAT_TRANSPORT": "qq"})
 
 
-def test_cli_setup_route_and_help(
-    setup: SetupService, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from evolving_companion import setup_app
-
-    monkeypatch.setattr(manager.sys, "platform", "linux")
-    monkeypatch.setattr(
-        manager.sys, "argv", ["si", "setup", "--env-file", str(setup.env.path)]
+def test_setup_explicit_environment_wins_over_file(setup: SetupService) -> None:
+    setup.env.path.write_text("DEEPSEEK_API_KEY=fake-file-key\n", encoding="utf-8")
+    service = SetupService(
+        setup.env.path,
+        environment={"DEEPSEEK_API_KEY": "fake-process-key"},
+        project_root=setup.paths.project,
     )
-    monkeypatch.setattr(setup_services, "SetupService", lambda *args: setup)
-    called = []
-    monkeypatch.setattr(setup_app.SetupApp, "run", lambda self: called.append("setup"))
-    monkeypatch.setattr(
-        manager,
-        "load_server_env",
-        lambda path: pytest.fail("Setup must not load stale environment"),
-    )
-    assert manager.main() == 0 and called == ["setup"]
-    monkeypatch.setattr(manager.sys, "argv", ["si", "setup", "--help"])
-    with pytest.raises(SystemExit) as error:
-        manager.main()
-    assert error.value.code == 0
+    assert service.effective()["DEEPSEEK_API_KEY"] == "fake-process-key"
+    assert service.env.read()["DEEPSEEK_API_KEY"] == "fake-file-key"
 
 
 def fill_form(screen: SetupScreen) -> None:
@@ -333,7 +296,7 @@ def fill_form(screen: SetupScreen) -> None:
     screen.query_one("#value-SI_QQ_ALLOWED_USER_IDS", Input).value = "101"
 
 
-def test_setup_headless_save_review_skip_start_and_exit(
+def test_setup_headless_save_review_and_exit(
     setup: SetupService,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -377,44 +340,13 @@ def test_setup_headless_save_review_skip_start_and_exit(
     assert setup.env.read()["DEEPSEEK_API_KEY"] == KEYS["DEEPSEEK_API_KEY"]
 
 
-def test_cancel_and_manager_shared_flow(
-    setup: SetupService, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import evolving_companion.manager_services as manager_services
-
-    monkeypatch.setattr(
-        manager_services, "check_deployment", lambda *args, **kwargs: ()
-    )
-    facade = DeploymentFacade(setup.paths, setup.service, {})
-    assert facade.overview().setup_status == "Setup Required"
-    app = SIManagerApp(facade, setup_service=setup)
-
-    async def smoke():
-        async with app.run_test(size=(110, 50)) as pilot:
-            await app.workers.wait_for_complete()
-            app.query_one("#setup", Button).press()
-            await pilot.pause()
-            await app.workers.wait_for_complete()
-            assert isinstance(app.screen, SetupScreen)
-            app.screen.query_one("#configure", Button).press()
-            await pilot.pause()
-            fill_form(app.screen)
-            await pilot.press("escape")
-            await app.workers.wait_for_complete()
-            assert not isinstance(app.screen, SetupScreen)
-            assert not setup.env.path.exists()
-            await pilot.press("q")
-
-    asyncio.run(smoke())
-
-
 def test_parser_bad_input_and_existing_secret_never_prefilled(
     setup: SetupService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     with pytest.raises(EnvEditError) as error:
         parse_env('BAD="fake-secret\n')
     assert "fake-secret" not in str(error.value)
-    assert isinstance(setup.env, DeploymentEnvService)
+    assert isinstance(setup.env, ApplicationEnvService)
     fake_check(monkeypatch, setup)
     assert setup.save(updates()).saved
     app = SetupApp(setup)
@@ -432,56 +364,3 @@ def test_parser_bad_input_and_existing_secret_never_prefilled(
             assert not app.is_running
 
     asyncio.run(smoke())
-
-
-def test_linux_permission_boundary_is_mocked(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from types import SimpleNamespace
-
-    target = tmp_path / "env"
-    calls = []
-    # Restore the real helper, only its OS operations are mocked.
-    # Windows never performs an actual chmod/chown or requires a si Linux account.
-    with monkeypatch.context() as scope:
-        scope.setitem(
-            sys.modules,
-            "pwd",
-            SimpleNamespace(
-                getpwnam=lambda name: SimpleNamespace(pw_uid=123, pw_gid=456)
-            ),
-        )
-        scope.setattr(deployment_env.os, "name", "posix")
-        scope.setattr(
-            deployment_env.os,
-            "chown",
-            lambda *args: calls.append(("owner", args)),
-            raising=False,
-        )
-        scope.setattr(
-            deployment_env.os, "chmod", lambda *args: calls.append(("mode", args))
-        )
-        REAL_PROTECT_FILE(target)
-    assert calls == [("owner", (target, 123, 456)), ("mode", (target, 0o600))]
-
-
-def test_explicit_environment_override_and_refresh(
-    setup: SetupService, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    setup.environment["DEEPSEEK_API_KEY"] = "fake-explicit-key"
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-explicit-key")
-    # Register mutations for teardown before the manager refresh adds generic keys.
-    for name in setup.env.defaults().keys() | {
-        "SI_MEMORY_EMBEDDING_API_KEY",
-        "SI_MEMORY_RERANKER_API_KEY",
-    }:
-        if name != "DEEPSEEK_API_KEY":
-            monkeypatch.setenv(name, "")
-    fake_check(monkeypatch, setup)
-    assert setup.save(updates()).saved
-    setup.refresh_process_environment()
-    import os
-
-    assert os.environ["DEEPSEEK_API_KEY"] == "fake-explicit-key"
-    assert os.environ["SI_MEMORY_EMBEDDING_API_KEY"] == KEYS["SILICONFLOW_API_KEY"]
-    assert "fake-explicit-key" not in setup.last_result.message
