@@ -18,7 +18,6 @@ from evolving_companion.config_env import OperationResult
 from evolving_companion.manager_app import PAGES, SIManagerApp
 from evolving_companion.manager_services import ManagerService
 from evolving_companion.runtime_control import RuntimeState, RuntimeStatus
-from evolving_companion.setup_app import SetupScreen
 from evolving_companion.ui_text import PAGE_LABELS, check_text, display_value
 
 
@@ -81,6 +80,9 @@ def service(tmp_path: Path, monkeypatch):
     )
     monkeypatch.setattr(
         result, "check", lambda **kwargs: OperationResult(True, "Fake local check")
+    )
+    monkeypatch.setattr(
+        result, "web_setup", lambda: "Web 配置已启动 http://127.0.0.1:1234/#fake-token"
     )
     return result
 
@@ -258,11 +260,13 @@ def test_headless_navigation_lifecycle_configure_and_exit(service):
             )
             await pilot.press("enter")
             await app.workers.wait_for_complete()
-            assert isinstance(app.screen, SetupScreen)
+            assert app.page == "Configure"
+            assert "Web 配置已启动" in str(output.content)
             await pilot.press("escape")
             await app.workers.wait_for_complete()
-            assert not isinstance(app.screen, SetupScreen) and app.page == "Status"
+            assert app.page == "Status"
             await pilot.press("q")
+            await app.workers.wait_for_complete()
             assert not app.is_running
 
     asyncio.run(run())
@@ -357,4 +361,66 @@ def test_presentation_keeps_internal_status_and_safe_check_text():
             "LLM API Key        CONFIGURED\nTransport       FAILED (ValueError)\nRuntime DB (read-only) NOT INITIALIZED (offline; no DB created)"
         )
         == "语言模型 API 密钥：已配置\n聊天连接：失败（ValueError）\n运行数据库（只读）：尚未初始化（离线检查；未创建数据库）"
+    )
+
+
+def test_web_configure_lifetime_and_exit_never_stop_core(service, monkeypatch):
+    from evolving_companion import web_setup
+
+    calls = []
+
+    class FakeWeb:
+        port = 1234
+        url = "http://127.0.0.1:1234/#fake-access"
+        is_running = True
+
+        def __init__(self, config):
+            calls.append("create")
+
+        def start(self):
+            calls.append("start")
+
+        def stop(self):
+            calls.append("stop")
+
+    monkeypatch.setattr(web_setup, "WebSetupServer", FakeWeb)
+    monkeypatch.setattr(service, "web_setup", lambda: ManagerService.web_setup(service))
+    app = SIManagerApp(service)
+
+    async def run():
+        async with app.run_test(size=(48, 30)) as pilot:
+            await app.workers.wait_for_complete()
+            app.configure()
+            await app.workers.wait_for_complete()
+            assert "ssh -N -L" in str(app.query_one("#output", Static).content)
+            await pilot.press("r")
+            await app.workers.wait_for_complete()
+            assert calls == ["create", "start"]
+            assert not app.busy and not app.query_one("#navigation").disabled
+            service._web.is_running = False
+            await pilot.press("r")
+            await app.workers.wait_for_complete()
+            assert calls == ["create", "start", "stop", "create", "start"]
+            await pilot.press("s")
+            await app.workers.wait_for_complete()
+            assert calls[-1] == "stop"
+            app.configure()
+            await app.workers.wait_for_complete()
+            await pilot.press("q")
+            await app.workers.wait_for_complete()
+
+    asyncio.run(run())
+    assert calls == [
+        "create",
+        "start",
+        "stop",
+        "create",
+        "start",
+        "stop",
+        "create",
+        "start",
+        "stop",
+    ]
+    assert (
+        isinstance(service.controller, FakeController) and not service.controller.calls
     )

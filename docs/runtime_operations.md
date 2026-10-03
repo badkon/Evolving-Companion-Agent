@@ -1,6 +1,6 @@
 # Runtime Configuration / Operations
 
-当前保留可复用的应用能力；Linux Server 可使用 [Docker Compose 运行包装](docker_server_deployment_v1.md)，源码部署可使用 [SI Manager v0.1](si_manager_v01.md) 的 Native 控制。不提供安装器或自动更新；Native Manager 不控制 Docker。
+当前保留可复用的应用能力；源码部署优先使用 [Deployment UX v0.1](deployment_ux_v01.md) 的最小 install.sh、Manager、Web Setup。另保留 [Docker Compose 运行包装](docker_server_deployment_v1.md)。不提供自动更新；Native Manager 不控制 Docker。
 
 ## 能力分类
 
@@ -28,7 +28,9 @@ Manager Start / Restart 使用严格 runtime check，none 也是合法模式，�
 
 默认模板 `config/si.env.example` 不含真实秘密；向导默认写入 `config/si.env`，支持 `--env-file` 和 `--project-root`。配置文件及其私有备份已被 Git 忽略。密钥输入 masked、默认保留已有值；Review 不显示秘密，原子保存前保护文件并备份，未知配置行保留。POSIX 下限制文件权限，但不修改账户/ownership。Windows 下目录 ACL 由操作者管理。
 
-加载优先级为显式进程环境变量 > 配置文件；此入口不自动加载开发 `.env.local`。`SI_RUNTIME_DB` 默认 `runtime/si_001.db`，`SI_BACKUP_DIR` 默认 `backups`；相对路径以运行时工作目录为基准，外置路径可显式配置。运行检查前需要创建数据库父目录。向导不改变 Character UUID、seed 或数据库，不初始化 runtime，也不启动程序。Transport None 可无密钥保存，仅用于暂未连接聊天的配置。
+加载优先级为显式进程环境变量 > 配置文件；此入口不自动加载开发 `.env.local`。`SI_RUNTIME_DB` 默认 `runtime/si_001.db`，`SI_BACKUP_DIR` 默认 `backups`；相对路径以运行时工作目录为基准，外置路径可显式配置。运行检查前需要创建数据库父目录。终端向导不改 seed；Web 表单可按现 schema 修改 seed，锁定 UUID/正式身份，不修改数据库、不初始化 runtime。保存可缺少密钥，实际 Start 仍严格校验。
+
+Manager Configure 现在启动临时 loopback Web，`s` 关闭，退出 Manager graceful drain；Core 不受影响。Web 连接测试是显式真实请求；状态页本地检查不主动测试 API/QQ。`SI_LLM_API_URL` / `SI_LLM_MODEL` 可覆盖既有 DeepSeek 默认配置，仍使用一个 OpenAI-compatible adapter 和原密钥环境变量。
 
 ## Check / Health / API-only 入口
 

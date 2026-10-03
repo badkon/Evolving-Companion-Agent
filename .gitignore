@@ -77,3 +77,4 @@ Desktop.ini
 *.tmp
 *.swp
 *~
+*.yaml.bak.*

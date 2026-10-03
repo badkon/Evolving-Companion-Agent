@@ -10,11 +10,18 @@ from dataclasses import dataclass
 from pathlib import Path
 import stat
 import tempfile
+from uuid import uuid4
 
 from dotenv.parser import parse_stream
 
 SECRET_FIELDS = ("DEEPSEEK_API_KEY", "SILICONFLOW_API_KEY", "SI_ONEBOT_ACCESS_TOKEN")
 EDITABLE_FIELDS = frozenset(SECRET_FIELDS) | {
+    "SI_LLM_API_URL",
+    "SI_LLM_MODEL",
+    "SI_MEMORY_EMBEDDING_API_URL",
+    "SI_MEMORY_EMBEDDING_API_ID",
+    "SI_MEMORY_EMBEDDING_DIMENSION",
+    "SI_MEMORY_RERANKER_API_URL",
     "SI_MEMORY_EMBEDDING_PROVIDER",
     "SI_MEMORY_EMBEDDING_MODEL",
     "SI_MEMORY_RERANKER_PROVIDER",
@@ -97,9 +104,9 @@ class ApplicationEnvService:
 
     def backup(self, original: str) -> Path:
         target = self.path.with_name(
-            f"{self.path.name}.bak.{datetime.now(timezone.utc):%Y%m%d_%H%M%S}"
+            f"{self.path.name}.bak.{datetime.now(timezone.utc):%Y%m%d_%H%M%S}.{uuid4().hex[:8]}"
         )
-        # x mode will never overwrite earlier snapshots, including same-second ones.
+        # Unique names plus x mode preserve every rapid successive Web save.
         with target.open("x", encoding="utf-8", newline="\n") as file:
             protect_file(target)
             file.write(original)

@@ -12,7 +12,6 @@ from textual.widgets import Footer, Header, OptionList, Static
 
 from evolving_companion.config_env import OperationResult
 from evolving_companion.manager_services import ManagerService
-from evolving_companion.setup_app import SetupScreen
 from evolving_companion.ui_text import FIELD_LABELS, PAGE_LABELS, display_value
 
 PAGES = ("Start", "Stop", "Restart", "Status", "Logs", "Configure", "Exit")
@@ -25,6 +24,7 @@ class SIManagerApp(App[None]):
         ("q", "safe_quit", "退出管理器"),
         ("r", "refresh_page", "刷新"),
         ("escape", "back", "返回状态"),
+        ("s", "stop_web", "关闭网页配置"),
     ]
     CSS = """
     #navigation { width: 25; }
@@ -79,6 +79,8 @@ class SIManagerApp(App[None]):
             self.action_refresh_page()
 
     def _page_text(self) -> str:
+        if self.page == "Configure":
+            return self.service.web_setup()
         if self.page == "Logs":
             result = self.service.logs()
             return "最近日志（最多 100 行 / 64 KiB；r 刷新）\n" + result.message
@@ -120,8 +122,9 @@ class SIManagerApp(App[None]):
             return
         self.busy = True
         try:
-            setup = await asyncio.to_thread(self.service.setup_service)
-            self.push_screen(SetupScreen(setup), self._configured)
+            self.page = "Configure"
+            text = await asyncio.to_thread(self.service.web_setup)
+            self.query_one("#output", Static).update(text)
         except Exception as error:
             self.query_one("#result", Static).update(
                 f"无法打开配置（{type(error).__name__}）。"
@@ -129,16 +132,12 @@ class SIManagerApp(App[None]):
         finally:
             self.busy = False
 
-    def _configured(self, saved: bool | None) -> None:
-        self.page = "Status"
-        self.action_refresh_page()
-
     def action_refresh_page(self) -> None:
-        if not self.busy and not isinstance(self.screen, SetupScreen):
+        if not self.busy:
             self.perform(self._page_text)
 
     def action_back(self) -> None:
-        if not self.busy and not isinstance(self.screen, SetupScreen):
+        if not self.busy:
             self.page = "Status"
             self.query_one("#navigation", OptionList).highlighted = PAGES.index(
                 "Status"
@@ -146,9 +145,32 @@ class SIManagerApp(App[None]):
             self.action_refresh_page()
 
     def action_safe_quit(self) -> None:
-        if isinstance(self.screen, SetupScreen):
-            self.screen.action_cancel()
-        elif self.busy:
+        if self.busy:
             self.notify("操作进行中，请等待完成后再退出。", severity="warning")
         else:
-            self.exit()  # Intentionally never stop the independent Core process.
+            self.shutdown_web()
+
+    @work
+    async def shutdown_web(self) -> None:
+        self.busy = True
+        try:
+            await asyncio.to_thread(self.service.close_web_setup)
+            self.exit()  # Never stop the independent Core process.
+        finally:
+            self.busy = False
+
+    @work
+    async def action_stop_web(self) -> None:
+        if self.busy:
+            return
+        self.busy = True
+        try:
+            await asyncio.to_thread(self.service.close_web_setup)
+            self.page = "Status"
+            self.query_one("#result", Static).update("Web 配置已关闭；Core 保持不变。")
+        finally:
+            self.busy = False
+        self.action_refresh_page()
+
+    async def on_unmount(self) -> None:
+        await asyncio.to_thread(self.service.close_web_setup)

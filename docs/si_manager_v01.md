@@ -9,7 +9,7 @@ si setup --env-file /absolute/path/to/si.env
 python -m evolving_companion.manager
 ```
 
-默认进入中文 Textual TUI「SI 管理器」：启动、停止、重启、状态、日志、配置、退出。上下键/Enter 导航，`r` 刷新，Esc 回状态，`q` 仅退出管理器。worker 执行检查/控制，busy 时拒绝重复操作和退出。配置复用现有中文「首次配置」SetupScreen（masked keys、检查配置、private backup、atomic save），不是另一套配置实现。配置取消/完成后回状态；不自动启动/重启 runtime。窄终端下菜单/按钮纵向排列；内部状态值与配置字段不翻译，不引入多语言框架。建议在项目根目录运行，沿用 Setup 的相对路径约定。
+默认进入中文 Textual TUI「SI 管理器」：启动、停止、重启、状态、日志、配置、退出。上下键/Enter 导航，`r` 刷新，Esc 回状态，`q` 仅退出管理器。worker 执行检查/控制，busy 时拒绝重复操作和退出。配置现打开临时 loopback Web Setup，显示访问 URL 和 SSH tunnel 命令；`s` 关闭 Web，`q` 等待保存完成后关闭 Web，不停止 Core。原 `si setup` 保留 SetupScreen 终端 fallback。两者复用 env 原子保存，不自动启动/重启 runtime。窄终端菜单纵向排列；内部状态值与配置字段不翻译。详见 [Deployment UX](deployment_ux_v01.md)。
 
 ## 运行与身份
 
@@ -39,4 +39,4 @@ Logs 最多读取末尾 64 KiB / 100 行；截断首条不完整行。使用 con
 
 `python scripts/run_si_manager_smoke.py` 用临时 seed/config、fake controller/headless Textual 测试 Status → Start → Logs → Configure → Status → q。单元测试覆盖控制失败边界；Linux 专项测试仅启动 synthetic helper，Windows 跳过。当前 Windows fake/headless 验证不等于真实 Linux Manager / Docker / API / QQ 全栈验收。
 
-Manager 只识别自己记录的进程，不能检测手动启动或 Docker 中的所有 DB writer；不要同时用多种入口运行同一数据库。Runtime record 不随私人 DB backup/restore 自动重建。没有 daemon、systemd/Docker backend、开机自启、崩溃 supervisor、installer、update、Web Setup、SnowLuma 安装、backup/restore UI 或新的 Core 初始化流程。
+Manager 只识别自己记录的进程，不能检测手动启动或 Docker 中的所有 DB writer；不要同时用多种入口运行同一数据库。Runtime record 不随私人 DB backup/restore 自动重建。独立 `install.sh` 只准备源码环境；没有 daemon、systemd/Docker backend、开机自启、崩溃 supervisor、update、SnowLuma 安装、backup/restore UI 或新的 Core 初始化流程。

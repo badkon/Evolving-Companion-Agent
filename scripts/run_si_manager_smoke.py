@@ -12,7 +12,6 @@ from evolving_companion.config_env import OperationResult
 from evolving_companion.manager_app import PAGES, SIManagerApp
 from evolving_companion.manager_services import ManagerService
 from evolving_companion.runtime_control import RuntimeState, RuntimeStatus
-from evolving_companion.setup_app import SetupScreen
 
 
 class FakeController:
@@ -55,8 +54,11 @@ async def smoke(root: Path) -> None:
         root / "config/si.env", project_root=root, environment={}, controller=controller
     )
     app = SIManagerApp(service)
-    with patch.object(
-        service, "check", return_value=OperationResult(True, "Fake local check")
+    with (
+        patch.object(service, "web_setup", return_value="Web 配置已启动（fake）"),
+        patch.object(
+            service, "check", return_value=OperationResult(True, "Fake local check")
+        ),
     ):
         async with app.run_test(size=(100, 40)) as pilot:
             await app.workers.wait_for_complete()
@@ -67,16 +69,17 @@ async def smoke(root: Path) -> None:
                 )
                 await pilot.press("enter")
                 await app.workers.wait_for_complete()
-            assert isinstance(app.screen, SetupScreen)
+            assert app.page == "Configure"
             await pilot.press("escape")
             await app.workers.wait_for_complete()
-            assert app.page == "Status" and not isinstance(app.screen, SetupScreen)
+            assert app.page == "Status"
             await pilot.press("q")
+            await app.workers.wait_for_complete()
             assert not app.is_running
     assert controller.calls == ["start"] and controller.state == "Running"
     assert not service.paths().database.exists() and not service.env_file.exists()
     assert seed.read_bytes() == before
-    print("PASS: Status -> Start -> Logs -> existing Setup -> Status -> q.")
+    print("PASS: Status -> Start -> Logs -> Web Setup (fake) -> Status -> q.")
     print(
         "Fake runtime remains Running after Manager exit; no Core, DB, process or network used."
     )

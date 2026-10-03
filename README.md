@@ -2,6 +2,20 @@
 
 一个面向长期陪伴的自主 Agent 项目，长期探索持续身份、长期记忆、人格演化、关系发展、虚拟生活、世界感知与未来实体迁移。
 
+## 快速开始（Ubuntu 源码部署）
+
+先 clone 本仓库；在已安装 Python 3.12 和 `python3.12-venv` 的环境，以同一个普通用户执行：
+
+```bash
+cd Evolving-Companion-Agent
+bash install.sh
+export PATH="$HOME/.local/bin:$PATH"
+si
+```
+
+选择 **配置** → 按提示 SSH 转发并打开 Web Setup → 填写 API / 角色 / QQ 配置 → 测试连接 → 保存 → 检查配置 → 返回管理器 **启动**。
+不需要手动建 venv 或编辑配置文件。尚需真实 Linux / SnowLuma / QQ 验收，详见 [部署指南](docs/deployment_ux_v01.md)。
+
 ## 当前状态
 
 - 已加入 Docker Compose Server Runtime Foundation（API-only、宿主机持久化）；通用 Runtime Configuration、Setup、Health 和 Backup / Restore 保留。
@@ -36,13 +50,13 @@ B8 增加 [Lazy World Temporal Context](docs/b8_lazy_world_time_v01.md)：按访
 
 ## 开发环境
 
-Linux 服务器运行方式见 [Docker Server Deployment v1](docs/docker_server_deployment_v1.md)：准备配置与持久化目录，`docker compose build` 后 `docker compose up -d`。只运行 SI Core，OneBot 是外部接口；不提供一键 installer、自动更新或已发布镜像。
+推荐源码部署见 [Deployment UX v0.1](docs/deployment_ux_v01.md)：Python 3.12+ 下运行 `bash install.sh` → `si` → 配置 → Web Setup → 检查配置 → 启动。安装器只准备当前 checkout/venv/用户 launcher，不改账户或系统服务。真实 Linux/API/QQ 验收仍需执行文档步骤。另保留 [Docker Server Deployment v1](docs/docker_server_deployment_v1.md)，不提供 Docker 自动安装、自动更新或已发布镜像。
 
 正式 server 支持 `SI_CHAT_TRANSPORT=none`：完成共享 Core 初始化后无聊天常驻，不要求 QQ 配置，SIGINT/Ctrl+C 或 SIGTERM 可正常退出；API keys/provider 配置仍须有效。使用 `python -m evolving_companion.server --env-file config/si.env`；qq 模式保持既有聊天行为。
 
-安装项目后，在项目根目录运行 `si`（或 `python -m evolving_companion.manager`）进入 [SI Manager v0.1](docs/si_manager_v01.md)：Status、Start、Stop、Restart、Logs、Configure、Exit。Native 控制面向 Linux 源码部署，使用当前 Python 启动独立 server 进程；退出 Manager 不停止 Core。它不控制 Docker/systemd，不提供安装、更新、开机自启或崩溃监控。离线 fake/headless 检查：`python scripts/run_si_manager_smoke.py`。修改 console entry 后需重新 `pip install -e .` 更新 `si` 入口。
+安装项目后，在项目根目录运行 `si`（或 `python -m evolving_companion.manager`）进入 [SI Manager v0.1](docs/si_manager_v01.md)：启动、停止、重启、状态、日志、配置、退出。Native 控制使用当前 Python 启动独立 server；退出 Manager 关闭临时 Web，不停止 Core。不控制 Docker/systemd，不提供更新、开机自启或崩溃监控。离线 headless 检查：`python scripts/run_si_manager_smoke.py`。升级本轮依赖后需重新 `pip install -e .`。
 
-`si setup` 或 `python -m evolving_companion.setup` 仍提供通用应用配置向导；Manager Configure 复用同一个 SetupScreen，默认写入 Git 忽略的 `config/si.env`：masked API key、model、QQ/None transport、Review 和原子保存。向导不启动运行程序。API-only 入口、离线检查和 SQLite-safe backup/restore 的命令及边界见 [Runtime Operations](docs/runtime_operations.md)。离线向导检查：`python scripts/run_setup_smoke.py`。
+Manager 配置启动带临时 token 的 loopback Web Setup，显示 SSH 转发命令；支持 LLM/Memory API、Character seed、QQ/None、连接测试与安全保存。`si setup` 保留原终端配置 fallback。配置文件仍是 Git 忽略的 `config/si.env`，不另建设置数据库。Web 保存不启动 Core，不回显已有密钥，也不改变身份 UUID。命令与安全边界见 [Runtime Operations](docs/runtime_operations.md)。离线检查：`python scripts/run_setup_smoke.py`、`python scripts/run_web_setup_smoke.py`。
 
 A5 已建立离线 QQ 私聊 Adapter Core：安全过滤后仅调用既有 Conversation 的 `send(text)`，角色回复原样返回；不登录 QQ、不启动 SnowLuma、不建立网络连接。设计与运行边界见 [A5 QQ Private Alpha](docs/a5_qq_private_alpha_v01.md)。完全离线检查：`python scripts/run_qq_adapter_smoke.py`。
 

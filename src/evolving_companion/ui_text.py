@@ -11,6 +11,8 @@ PAGE_LABELS = {
 }
 
 FIELD_LABELS = {
+    "llm": "语言模型",
+    "memory": "记忆服务",
     "character": "角色",
     "internal_identity": "内部 ID",
     "runtime": "运行状态",
@@ -52,6 +54,7 @@ def display_value(value: str) -> str:
 def check_text(text: str) -> str:
     """Present known local-check output in Chinese, without changing check results."""
     names = {
+        "LLM Endpoint / Model": "语言模型地址 / 模型",
         "Character Seed / Identity": "角色初始数据 / 身份",
         "World Seed": "世界初始数据",
         "Runtime Directory / Writable SQLite Probe": "运行目录 / SQLite 写入检查",

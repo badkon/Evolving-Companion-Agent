@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SI 首次配置</title><link rel="stylesheet" href="/static/setup.css"><script src="/static/setup.js" defer></script></head>
+<body><main><h1>SI 配置</h1>
+<p>临时本地配置页面。保存不会启动 Core；请返回管理器启动或重启。不要分享带凭证的地址。</p>
+<p>远程服务器请使用管理器显示的 SSH 转发命令，在自己的浏览器打开地址。浏览器刷新后需重新打开完整地址。</p>
+<output id="result" role="status">正在读取配置…</output>
+<p id="overrides"></p>
+<section><h2>应用配置</h2><p>默认 DeepSeek + SiliconFlow（API/API），不加载本地模型。地址由可信操作者设置；测试会向该地址发送所选密钥。</p>
+<div class="grid">{% for key,label in fields.items() %}<label>{{label}}
+{% if key == 'SI_CHAT_TRANSPORT' %}<select data-config="{{key}}"><option value="none">无聊天连接（仅 Core 常驻）</option><option value="qq">QQ · SnowLuma / OneBot</option></select>
+{% else %}<input data-config="{{key}}" autocomplete="off">{% endif %}</label>{% endfor %}</div>
+<h3>凭据</h3><p>已有凭据不回显。留空不代表删除；需明确选择“清空”。环境变量优先于文件。</p>
+{% for key,label in secrets.items() %}<div class="secret"><label>{{label}} <span id="status-{{key}}"></span>
+<select data-mode="{{key}}"><option value="keep">保留</option><option value="replace">替换</option><option value="clear">清空</option></select>
+<input type="password" data-secret="{{key}}" autocomplete="new-password" placeholder="仅替换时填写" disabled></label></div>{% endfor %}
+<p>QQ 需自行运行并登录 SnowLuma、启用 OneBot 正向 WebSocket；必须填写机器人 QQ 和允许私聊的 QQ。此页面不安装或登录 SnowLuma。</p>
+<div class="buttons"><button data-action="llm">测试语言模型</button><button data-action="embedding">测试 Embedding</button><button data-action="reranker">测试 Reranker</button><button data-action="qq">测试 OneBot / QQ 状态</button><button data-action="save">保存应用配置</button><button data-action="validate">检查配置</button></div>
+<p>连接测试会产生少量 API 调用费用。通过检查 ≠ QQ 私聊已验收；保存允许缺少凭据，但启动必须通过完整检查。</p></section>
+<section><h2>角色配置</h2><p id="identity"></p>
+<p>内部 UUID、开发代号、正式姓名、身份阶段和 continuity 只读。现有 schema 没有独立“说话方式 / 自传”字段：以下编辑人格、社交表达、初始生活背景；不会制造经历或改写长期记忆。</p>
+<div class="grid">{% for key,spec in character_fields.items() %}<label>{{spec[0]}}<textarea data-character="{{key}}" rows="3"></textarea></label>{% endfor %}</div>
+<button data-action="character">保存角色表单</button>
+<details><summary>高级 YAML（与表单独立保存，仍校验 schema 和身份）</summary><textarea id="yaml" rows="22" spellcheck="false"></textarea><button data-action="yaml">保存高级 YAML</button></details></section>
+<button id="reload">重新加载（放弃未保存内容）</button>
+</main></body></html>

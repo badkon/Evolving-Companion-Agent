@@ -28,6 +28,8 @@ class ManagerStatus:
     runtime_db: str
     transport: str
     health: str
+    llm: str = "未测试"
+    memory: str = "未测试"
 
 
 class ManagerService:
@@ -44,6 +46,7 @@ class ManagerService:
         self.environment = dict(os.environ if environment is None else environment)
         self.controller = controller
         self._native: NativeProcessController | None = None
+        self._web = None
 
     def effective(self) -> dict[str, str]:
         service = ApplicationEnvService(
@@ -148,6 +151,10 @@ class ManagerService:
             db_status,
             redact(transport, values),
             "OK (local only)" if health else "Error (local only)",
+            "已配置；API 未测试" if values.get("DEEPSEEK_API_KEY") else "缺少密钥",
+            "密钥已配置；连接未测试"
+            if values.get("SILICONFLOW_API_KEY")
+            else "缺少密钥",
         )
 
     def start(self) -> OperationResult:
@@ -155,7 +162,7 @@ class ManagerService:
         if not check.ok:
             return OperationResult(
                 False,
-                "无法启动：运行配置检查未通过，请打开“配置”。",
+                "无法启动：运行配置检查未通过，请打开“配置”。\n" + check.message,
             )
         return self.backend().start()
 
@@ -180,3 +187,29 @@ class ManagerService:
         return SetupService(
             self.env_file, environment=self.environment, project_root=self.project
         )
+
+    def web_setup(self) -> str:
+        from evolving_companion.web_setup import WebSetupServer
+        from evolving_companion.web_setup_services import WebSetupService
+
+        if self._web is not None and not self._web.is_running:
+            self.close_web_setup()
+        if self._web is None:
+            server = WebSetupServer(
+                WebSetupService(self.env_file, self.project, self.environment)
+            )
+            server.start()
+            self._web = server
+        return (
+            "Web 配置已启动（仅本机；访问地址含临时凭证，请勿分享）\n"
+            + self._web.url
+            + f"\n\n远程 SSH：在自己电脑执行（替换 user@server）：\nssh -N -L {self._web.port}:127.0.0.1:{self._web.port} user@server\n"
+            + "保持 SSH 窗口开启，再在自己电脑浏览器打开以上地址。\n"
+            + "保存后返回状态并启动/重启。si setup 仍可使用终端配置。\n"
+            + "按 s 停止 Web 配置；退出管理器也会关闭 Web，但不会停止 Core。"
+        )
+
+    def close_web_setup(self) -> None:
+        if self._web is not None:
+            self._web.stop()
+            self._web = None

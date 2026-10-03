@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from dotenv import load_dotenv
 
 from evolving_companion.local_env import PROJECT_ROOT
+from evolving_companion.llm import llm_settings
 
 from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.memory_provider_config import create_memory_providers
@@ -220,6 +221,7 @@ def check_runtime(
             )
         )
     check("Embedding / Reranker Provider", providers)
+    check("LLM Endpoint / Model", lambda: llm_settings(os.environ))
     check("Transport", transport)
     check("App Version", lambda: version("evolving-companion-agent"))
     return tuple(results)
