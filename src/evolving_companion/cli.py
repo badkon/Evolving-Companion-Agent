@@ -32,6 +32,7 @@ from evolving_companion.character_events import (
 from evolving_companion.character_state import CharacterState
 from evolving_companion.conversation import Conversation
 from evolving_companion.llm import LLMClient
+from evolving_companion.mini_life import MiniLifeService
 from evolving_companion.reply_pipeline import create_reply_pipeline
 from evolving_companion.local_env import load_local_env
 from evolving_companion.memory_consolidation import (
@@ -127,6 +128,7 @@ def _run(resources: ExitStack) -> None:
             character_timezone=seed_data.timezone,
             clock=clock,
             character_life_service=life_service,
+            mini_life_service=MiniLifeService(seed_data),
             observation_service=ObservationService(
                 store,
                 clock,

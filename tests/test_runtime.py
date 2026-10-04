@@ -91,7 +91,9 @@ def test_core_only_owns_resources_and_never_initializes_transport(
     assert closed == [True]
 
 
-@pytest.mark.parametrize("pipeline_mode", ["natural", "legacy"])
+@pytest.mark.parametrize(
+    "pipeline_mode", ["natural", "natural_full", "natural_simplified", "legacy"]
+)
 def test_shared_core_initializes_temporary_database_without_api_calls(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pipeline_mode: str
 ) -> None:
@@ -125,7 +127,7 @@ def test_shared_core_initializes_temporary_database_without_api_calls(
     with ExitStack() as resources:
         core = runtime.create_conversation(resources)
         assert core.history == ()
-        assert (core._reply_pipeline is not None) == (pipeline_mode == "natural")
+        assert (core._reply_pipeline is not None) == (pipeline_mode != "legacy")
     with closing(sqlite3.connect(database)) as connection:
         assert connection.execute("PRAGMA quick_check").fetchone() == ("ok",)
         assert connection.execute(

@@ -17,6 +17,7 @@ from evolving_companion.character_state import CharacterStateService
 from evolving_companion.clock import SystemClock
 from evolving_companion.conversation import Conversation
 from evolving_companion.llm import LLMClient
+from evolving_companion.mini_life import MiniLifeService
 from evolving_companion.reply_pipeline import create_reply_pipeline
 from evolving_companion.memory_consolidation import (
     MemoryConsolidationJudge,
@@ -80,6 +81,7 @@ def create_conversation(resources: ExitStack) -> Conversation:
         character_timezone=seed.timezone,
         clock=clock,
         character_life_service=life_service,
+        mini_life_service=MiniLifeService(seed),
         observation_service=ObservationService(
             store, clock, world_time_service=WorldTimeService(seed.timezone, clock)
         ),

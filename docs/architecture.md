@@ -26,6 +26,17 @@ Planner/Appraisal 选择 0–3 个经校验的 trait ID；Replyer 仅接收已�
 优先级为事实边界、稳定立场、关系距离、当前情绪心情、表达习惯；traits 不写入任何长期状态。
 legacy 仍使用原完整角色描述；未改 Seed、Memory/World schema、QQ 或 Runtime 生命周期。
 
+[Simplified Conversation Pipeline v1](simplified_conversation_pipeline_v1.md) 是可配置的消融路径：
+State → RelevantContextBuilder → Tiny Planner → Replyer。复用 Conversation 已取得的
+Character/Memory/State/Time/Life/Observation，以及同一次规划中的 Appraisal 和既有状态事务；
+不读取第二套状态、不改数据库 schema。Tiny 表达计划仅 focus/stance/boundary/ask。
+`natural_simplified` 旁路 Expression Intent/Selector/Habits/TemporaryStyle；
+`natural` 与 `natural_full` 保持完整模式，默认不变。自然度与真实 token/延迟待 QQ 验证。
+Mini Life Context v0.1 只给 simplified 提供即时计算的 now/next/today：
+复用 Seed 的 internal UUID、时区、喜好和既有 Life 关联；固定规则集中在 `mini_life.py`。
+自由活动按 UUID/本地日期/时间块稳定选择，不调用模型、不写数据库或历史事件。
+这是虚拟世界粗安排，不执行位置迁移；显式 State/Observation 优先，不证明过去经历。
+
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
 A2 v0.1 将初始 Seed Character Data 独立存放在 `data/characters/si_001.yaml`，数据路径为 YAML → Pydantic validation → Character Projection → PromptBuilder → LLM。

@@ -31,6 +31,8 @@ from evolving_companion.world import WorldEntityService
 from evolving_companion.reply_pipeline import NaturalReplyPipeline
 from evolving_companion.reply_planning import ReplyTarget
 from evolving_companion.affective import Event
+from evolving_companion.simplified_conversation import ConversationState
+from evolving_companion.mini_life import MiniLifeService
 
 
 class TextCompletionClient(Protocol):
@@ -57,6 +59,7 @@ class Conversation:
         character_life_service: CharacterLifeService | None = None,
         observation_service: ObservationContextPort | None = None,
         reply_pipeline: NaturalReplyPipeline | None = None,
+        mini_life_service: MiniLifeService | None = None,
     ) -> None:
         if character_state_service is not None and character_id is None:
             raise ValueError(
@@ -80,6 +83,7 @@ class Conversation:
             raise TypeError("character_id must be identity.internal_id (UUID)")
         self._llm_client = llm_client
         self._reply_pipeline = reply_pipeline
+        self._mini_life_service = mini_life_service
         self._clock = clock or SystemClock()
         self._prompt_builder = PromptBuilder(character_context)
         self._archive_store = archive_store
@@ -218,18 +222,20 @@ class Conversation:
                 logging.getLogger(__name__).warning(
                     "memory_recall_failed: %s", self._last_memory_recall_error
                 )
-        messages = self._prompt_builder.build(
-            self._history,
-            user_message,
-            recalled_memories,
-            character_state,
-            time_snapshot,
-            life_context,
-            observation,
-            affective_managed=self._reply_pipeline is not None
-            and self._reply_pipeline.affective_store is not None,
-            persona_managed=self._reply_pipeline is not None,
-        )
+        messages: list[Message] = []
+        if self._reply_pipeline is None or self._reply_pipeline.context_builder is None:
+            messages = self._prompt_builder.build(
+                self._history,
+                user_message,
+                recalled_memories,
+                character_state,
+                time_snapshot,
+                life_context,
+                observation,
+                affective_managed=self._reply_pipeline is not None
+                and self._reply_pipeline.affective_store is not None,
+                persona_managed=self._reply_pipeline is not None,
+            )
         event = (
             Event(
                 id=UUID(user_archive_id),
@@ -252,6 +258,21 @@ class Conversation:
                 ReplyTarget(user_message),
                 event,
                 character=self._prompt_builder.character_context,
+                state=ConversationState(
+                    self._prompt_builder.character_context,
+                    self._history,
+                    ReplyTarget(user_message),
+                    recalled_memories,
+                    character_state,
+                    time_snapshot,
+                    life_context,
+                    observation,
+                    self._mini_life_service.build(now_utc, life_context)
+                    if self._mini_life_service is not None
+                    else None,
+                )
+                if self._reply_pipeline.context_builder is not None
+                else None,
             )
             if self._reply_pipeline is not None
             else self._llm_client.complete(messages)

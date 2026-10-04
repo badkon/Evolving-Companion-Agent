@@ -11,6 +11,14 @@ Memory/Character/World 边界不变。用户已报告原 QQ 链路打通，新�
 从现有 Seed 预筛选特征，由同一次 Planner 选择 0–3 条交给 Replyer；保留简单回复、稳定立场和
 Grounding，不新增人格状态或第三次主回复调用。合成测试不代表真实 QQ 自然度已验收。
 
+可通过 `SI_REPLY_PIPELINE=natural_simplified` 使用
+[Simplified Conversation Pipeline v1](docs/simplified_conversation_pipeline_v1.md)：
+Relevant Context → 四字段 Tiny Planner → Replyer，旁路表达习惯与临时风格。
+默认 `natural` 保持完整管线，`natural_full` 是其别名，`legacy` 兼容原单次回复路径。
+离线 A/B：`python scripts/run_simplified_conversation_smoke.py --pipeline both`。
+简化模式另提供 Mini Life Context v0.1：按 Seed、时区和固定时间块计算 now/next/today，
+不写生活历史或数据库；离线检查：`python scripts/run_mini_life_smoke.py`。
+
 ## 快速开始（Ubuntu 源码部署）
 
 默认自然回复已接入 [Affective & Relationship State v1](docs/affective_relationship_state_v1.md)：

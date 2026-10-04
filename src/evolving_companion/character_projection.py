@@ -60,6 +60,7 @@ def select_trait_candidates(
     history: Sequence[Mapping[str, str]] = (),
     *,
     familiar: bool = False,
+    continue_topic: bool = False,
 ) -> tuple[CharacterTrait, ...]:
     """Bounded local preselection; the Planner still chooses zero to three traits.
 
@@ -67,7 +68,7 @@ def select_trait_candidates(
     suggestions cannot redefine preferences. These cues are not a semantic judge.
     """
     current = text.casefold()
-    continuation = any(
+    continuation = continue_topic or any(
         cue in current
         for cue in ("试一下", "试试嘛", "那个呢", "这个呢", "还是不", "为什么不")
     )

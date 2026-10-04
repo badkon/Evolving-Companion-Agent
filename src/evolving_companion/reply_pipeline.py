@@ -40,6 +40,13 @@ from evolving_companion.reply_planning import (
     ReplyTarget,
     PersonaRelevance,
 )
+from evolving_companion.simplified_conversation import (
+    ConversationState,
+    RelevantContext,
+    RelevantContextBuilder,
+    TinyPlan,
+    TinyPlanner,
+)
 
 PLANNER_MAX_TOKENS = 1280
 PLANNER_TIMEOUT = 8.0
@@ -68,6 +75,7 @@ class ReplyDiagnostics:
     active_traits: int = 0
     persona_strength: str = "none"
     trait_selection_seconds: float = 0
+    pipeline: str = "natural_full"
 
 
 class Replyer:
@@ -156,6 +164,8 @@ class NaturalReplyPipeline:
         replyer: Replyer,
         selector: ExpressionSelector | None = None,
         affective_store: AffectiveStore | None = None,
+        *,
+        simplified: bool = False,
     ) -> None:
         self.planner = planner
         self.replyer = replyer
@@ -166,6 +176,9 @@ class NaturalReplyPipeline:
         self.last_significant_event: SignificantAffectiveEvent | None = None
         self.last_persona_relevance = PersonaRelevance()
         self.last_trait_candidates: tuple[CharacterTrait, ...] = ()
+        self.context_builder = RelevantContextBuilder() if simplified else None
+        self.tiny_planner = TinyPlanner(planner.client) if simplified else None
+        self.last_relevant_context: RelevantContext | None = None
 
     def reply(
         self,
@@ -174,6 +187,7 @@ class NaturalReplyPipeline:
         event: Event | None = None,
         *,
         character: ProjectedCharacterContext | None = None,
+        state: ConversationState | None = None,
     ) -> str:
         self.last_diagnostics = None
         planner_error = None
@@ -183,6 +197,11 @@ class NaturalReplyPipeline:
         self.last_significant_event = None
         self.last_persona_relevance = PersonaRelevance()
         self.last_trait_candidates = ()
+        self.last_relevant_context = None
+        if self.context_builder is not None and (
+            state is None or state.target != target
+        ):
+            raise ValueError("Simplified pipeline requires matching per-turn State")
         original_context = [dict(m) for m in context]
         if self.affective_store is not None and event is not None:
             tick = perf_counter()
@@ -193,16 +212,19 @@ class NaturalReplyPipeline:
                     else self.affective_store.primary_target,
                     event.timestamp,
                 )
-                context = (
-                    original_context[:1]
-                    + [
-                        {
-                            "role": "system",
-                            "content": project_affective(self.last_affective_snapshot),
-                        }
-                    ]
-                    + original_context[1:]
-                )
+                if self.context_builder is None:
+                    context = (
+                        original_context[:1]
+                        + [
+                            {
+                                "role": "system",
+                                "content": project_affective(
+                                    self.last_affective_snapshot
+                                ),
+                            }
+                        ]
+                        + original_context[1:]
+                    )
             except Exception as error:
                 affective_error = type(error).__name__
                 logging.getLogger(__name__).warning(
@@ -213,7 +235,7 @@ class NaturalReplyPipeline:
         persona_managed = (
             character is not None and character.core_description is not None
         )
-        if persona_managed:
+        if persona_managed and self.context_builder is None:
             assert character is not None
             history = [m for m in context if m["role"] in {"user", "assistant"}]
             if target.kind == "user_message":
@@ -232,26 +254,47 @@ class NaturalReplyPipeline:
         planner_start = perf_counter()
         try:
             appraise = self.affective_store is not None and event is not None
-            planner_messages = self.planner.build_messages(
-                context, target, appraise=appraise, persona_candidates=candidates
-            )
-            guidance = self.planner.plan(
-                planner_messages, appraise=appraise, persona_candidates=candidates
-            )
+            if self.context_builder is not None and self.tiny_planner is not None:
+                if state is None:
+                    raise ValueError("Simplified pipeline requires per-turn State")
+                self.last_relevant_context = self.context_builder.build(
+                    state, self.last_affective_snapshot
+                )
+                self.last_trait_candidates = self.last_relevant_context.traits
+                planner_messages = self.tiny_planner.build_messages(
+                    self.last_relevant_context, appraise=appraise
+                )
+                guidance = self.tiny_planner.plan(planner_messages, appraise=appraise)
+            else:
+                planner_messages = self.planner.build_messages(
+                    context, target, appraise=appraise, persona_candidates=candidates
+                )
+                guidance = self.planner.plan(
+                    planner_messages, appraise=appraise, persona_candidates=candidates
+                )
         except Exception as error:
             # Explicit degraded turn, not a silent alternative planner or an API retry.
             planner_error = type(error).__name__
             logging.getLogger(__name__).warning(
                 "reply_planning_failed: %s", planner_error
             )
-            guidance = ReplyGuidance(
-                focus="只回应当前对象，依据原始上下文，不编造缺失信息。",
-                reply_act="answer",
-                scene="question",
-                tone="casual",
-                prefer=("direct",),
-                avoid=("playful",),
-                reply_reference="规划不可用；依据上下文回应，不编造自己的喜恶或鼓励接受未经确认的提议；必要时澄清，不默认追问续聊。",
+            guidance = (
+                TinyPlan(
+                    focus="回应当前消息",
+                    stance=None,
+                    boundary="只用已提供事实，不推断活动、日程或现实见面。",
+                    ask=False,
+                )
+                if self.context_builder is not None
+                else ReplyGuidance(
+                    focus="只回应当前对象，依据原始上下文，不编造缺失信息。",
+                    reply_act="answer",
+                    scene="question",
+                    tone="casual",
+                    prefer=("direct",),
+                    avoid=("playful",),
+                    reply_reference="规划不可用；依据上下文回应，不编造自己的喜恶或鼓励接受未经确认的提议；必要时澄清，不默认追问续聊。",
+                )
             )
         planned = perf_counter()
         if not planner_error and self.affective_store is not None and event is not None:
@@ -264,16 +307,19 @@ class NaturalReplyPipeline:
                     event, appraisal
                 )
                 self.last_significant_event = significant_event(event, appraisal)
-                context = (
-                    original_context[:1]
-                    + [
-                        {
-                            "role": "system",
-                            "content": project_affective(self.last_affective_snapshot),
-                        }
-                    ]
-                    + original_context[1:]
-                )
+                if self.context_builder is None:
+                    context = (
+                        original_context[:1]
+                        + [
+                            {
+                                "role": "system",
+                                "content": project_affective(
+                                    self.last_affective_snapshot
+                                ),
+                            }
+                        ]
+                        + original_context[1:]
+                    )
             except Exception as error:
                 affective_error = type(error).__name__
                 logging.getLogger(__name__).warning(
@@ -286,47 +332,58 @@ class NaturalReplyPipeline:
             else None
         )
         selection_start = perf_counter()
-        intent = condition_intent(
-            guidance.expression_intent(), self.last_affective_snapshot
-        )
-        self.last_persona_relevance = guidance.persona_relevance
-        active_traits = tuple(
-            t
-            for t in self.last_trait_candidates
-            if t.id in guidance.persona_relevance.active_traits
-        )
-        habits = (
-            ()
-            if planner_error
-            else self.selector.select(
-                intent,
-                target.text,
-                self.last_affective_snapshot,
-                limit=1 if active_traits else 3,
+        if isinstance(guidance, TinyPlan):
+            assert self.context_builder is not None and state is not None
+            self.last_relevant_context = self.context_builder.build(
+                state, self.last_affective_snapshot
             )
-        )
-        style = (
-            None
-            if planner_error or active_traits
-            else self.selector.temporary_style(intent, self.last_affective_snapshot)
-        )
-        reply_messages = self.replyer.build_messages(
-            context,
-            target,
-            guidance,
-            intent,
-            habits,
-            style,
-            active_traits=active_traits,
-        )
+            active_traits = self.last_relevant_context.traits
+            intent, habits, style = None, (), None
+            reply_messages = TinyPlanner.reply_messages(
+                self.last_relevant_context, guidance
+            )
+        else:
+            intent = condition_intent(
+                guidance.expression_intent(), self.last_affective_snapshot
+            )
+            self.last_persona_relevance = guidance.persona_relevance
+            active_traits = tuple(
+                t
+                for t in self.last_trait_candidates
+                if t.id in guidance.persona_relevance.active_traits
+            )
+            habits = (
+                ()
+                if planner_error
+                else self.selector.select(
+                    intent,
+                    target.text,
+                    self.last_affective_snapshot,
+                    limit=1 if active_traits else 3,
+                )
+            )
+            style = (
+                None
+                if planner_error or active_traits
+                else self.selector.temporary_style(intent, self.last_affective_snapshot)
+            )
+            reply_messages = self.replyer.build_messages(
+                context,
+                target,
+                guidance,
+                intent,
+                habits,
+                style,
+                active_traits=active_traits,
+            )
         selected = perf_counter()
         try:
             return self.replyer.reply(reply_messages)
         finally:
             self.last_diagnostics = ReplyDiagnostics(
-                intent.reply_act,
-                intent.scene,
-                intent.tone,
+                intent.reply_act if intent else "",
+                intent.scene if intent else "",
+                intent.tone if intent else "",
                 tuple(h.id for h in habits),
                 style.id if style else None,
                 planner_error,
@@ -342,8 +399,13 @@ class NaturalReplyPipeline:
                 affective_error,
                 len(self.last_trait_candidates),
                 len(active_traits),
-                guidance.persona_relevance.strength,
+                guidance.persona_relevance.strength
+                if isinstance(guidance, ReplyGuidance)
+                else "none",
                 trait_seconds,
+                "natural_simplified"
+                if self.context_builder is not None
+                else "natural_full",
             )
             logging.getLogger(__name__).debug(
                 "reply_pipeline: %s", asdict(self.last_diagnostics)
@@ -362,8 +424,10 @@ def create_reply_pipeline(
     mode = values.get("SI_REPLY_PIPELINE", "natural")
     if mode == "legacy":
         return None
-    if mode != "natural":
-        raise ValueError("SI_REPLY_PIPELINE must be legacy or natural")
+    if mode not in {"natural", "natural_full", "natural_simplified"}:
+        raise ValueError(
+            "SI_REPLY_PIPELINE must be legacy, natural, natural_full or natural_simplified"
+        )
     planner = LLMClient(
         environment=values,
         max_retries=0,
@@ -372,5 +436,8 @@ def create_reply_pipeline(
     )
     resources.callback(planner.close)
     return NaturalReplyPipeline(
-        ReplyPlanner(planner), Replyer(reply_client), affective_store=affective_store
+        ReplyPlanner(planner),
+        Replyer(reply_client),
+        affective_store=affective_store,
+        simplified=mode == "natural_simplified",
     )
