@@ -1,0 +1,45 @@
+<section class="card">
+<h2>基本身份 <span class="badge">身份锁定</span>
+</h2>
+<p id="identity">
+</p>
+<dl>
+<dt>身份阶段</dt>
+<dd data-identity="identity_stage">
+</dd>
+<dt>正式姓名</dt>
+<dd data-identity="personal_name">
+</dd>
+<dt>连续性代际</dt>
+<dd data-identity="continuity_generation">
+</dd>
+</dl>
+<p class="muted">UUID、开发代号、正式身份、阶段及连续性不可修改。Working Name 不是正式姓名。</p>
+</section>
+{% for title, keys in [('当前称呼',['working_name']),('性格',['traits']),('说话风格与关系基线',['strangers','familiar_people','solitude']),('兴趣与偏好',['likes','dislikes']),('初始背景',['current_role'])] %}
+<section class="card">
+<h2>{{title}}</h2>
+{% if 'strangers' in keys %}
+<p class="muted">展示现有社交倾向；schema 没有独立说话风格字段，不新增人格或关系设定。</p>
+{% endif %}
+<div class="grid">
+{% for key in keys %}
+<label>{{character_fields[key][0]}}<textarea data-character="{{key}}" rows="3">
+</textarea>
+</label>
+{% endfor %}
+</div>
+</section>
+{% endfor %}
+<div class="buttons">
+<button data-action="character">保存角色表单</button>
+<button id="reload" class="quiet">重新加载（放弃未保存内容）</button>
+</div>
+<details class="card">
+<summary>高级 YAML</summary>
+<p class="muted">与表单独立保存；仍校验原 schema、身份锁及并发版本。不会改写已有记忆或运行状态。</p>
+<label>Character Seed YAML<textarea id="yaml" rows="24" spellcheck="false">
+</textarea>
+</label>
+<button data-action="yaml">保存高级 YAML</button>
+</details>

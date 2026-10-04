@@ -1,0 +1,27 @@
+<section class="card">
+<h2>数据与配置 <span class="badge">只读概览</span>
+</h2>
+<dl>
+<dt>运行数据库</dt>
+<dd data-overview="database">读取中</dd>
+<dt>数据库大小（主文件）</dt>
+<dd data-overview="database_size">暂无数据</dd>
+<dt>备份状态</dt>
+<dd data-overview="backups">读取中</dd>
+<dt>应用版本</dt>
+<dd data-overview="version">
+</dd>
+<dt>配置文件</dt>
+<dd data-overview="config">
+</dd>
+<dt>Character Seed</dt>
+<dd data-overview="seed">
+</dd>
+</dl>
+<p class="muted">仅检查备份目录是否存在，不宣称备份有效。备份 / 恢复继续使用现有运维命令；此页不提供破坏性操作。</p>
+</section>
+<section class="card">
+<h2>边界与安全</h2>
+<p>临时 token + loopback，仅供可信操作者使用。请勿共享访问地址或将 Console 暴露公网。</p>
+<p>关闭浏览器不会停止 Core；退出管理器关闭 Console。终端配置 fallback：<code>si setup</code>。</p>
+</section>

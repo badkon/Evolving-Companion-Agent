@@ -196,17 +196,19 @@ class ManagerService:
             self.close_web_setup()
         if self._web is None:
             server = WebSetupServer(
-                WebSetupService(self.env_file, self.project, self.environment)
+                WebSetupService(
+                    self.env_file, self.project, self.environment, manager=self
+                )
             )
             server.start()
             self._web = server
         return (
-            "Web 配置已启动（仅本机；访问地址含临时凭证，请勿分享）\n"
+            "SI Console 已启动（仅本机；访问地址含临时凭证，请勿分享）\n"
             + self._web.url
             + f"\n\n远程 SSH：在自己电脑执行（替换 user@server）：\nssh -N -L {self._web.port}:127.0.0.1:{self._web.port} user@server\n"
             + "保持 SSH 窗口开启，再在自己电脑浏览器打开以上地址。\n"
-            + "保存后返回状态并启动/重启。si setup 仍可使用终端配置。\n"
-            + "按 s 停止 Web 配置；退出管理器也会关闭 Web，但不会停止 Core。"
+            + "保存后可在 Console 或管理器启动/重启。si setup 仍可使用终端配置。\n"
+            + "按 s 停止 Console；退出管理器也会关闭 Console，但不会停止 Core。"
         )
 
     def close_web_setup(self) -> None:

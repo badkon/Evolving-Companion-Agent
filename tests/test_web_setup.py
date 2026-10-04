@@ -44,7 +44,7 @@ def test_html_auth_origin_and_safe_rendering(service):
     service.env.path.write_text("DEEPSEEK_API_KEY=fake-secret\n")
     with client(service) as web:
         home = web.get("/")
-        assert home.status_code == 200 and "SI 配置" in home.text
+        assert home.status_code == 200 and "SI Console" in home.text
         assert "fake-secret" not in home.text and "fake-access" not in home.text
         state = web.get("/api/state")
         assert (
@@ -646,7 +646,7 @@ def test_no_path_traversal_or_arbitrary_file_write(service):
         for path, expected in (
             ("/static/%2e%2e/private.txt", 404),
             ("/static/%2e%2e/%2e%2e/config/si.env", 404),
-            ("/api/private.txt", 405),
+            ("/api/private.txt", 404),
         ):
             response = web.get(path)
             assert (

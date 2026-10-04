@@ -9,7 +9,7 @@ si setup --env-file /absolute/path/to/si.env
 python -m evolving_companion.manager
 ```
 
-默认进入中文 Textual TUI「SI 管理器」：启动、停止、重启、状态、日志、配置、退出。上下键/Enter 导航，`r` 刷新，Esc 回状态，`q` 仅退出管理器。worker 执行检查/控制，busy 时拒绝重复操作和退出。配置现打开临时 loopback Web Setup，显示访问 URL 和 SSH tunnel 命令；`s` 关闭 Web，`q` 等待保存完成后关闭 Web，不停止 Core。原 `si setup` 保留 SetupScreen 终端 fallback。两者复用 env 原子保存，不自动启动/重启 runtime。窄终端菜单纵向排列；内部状态值与配置字段不翻译。详见 [Deployment UX](deployment_ux_v01.md)。
+默认进入中文 Textual TUI「SI 管理器」：启动、停止、重启、状态、日志、配置、退出。上下键/Enter 导航，`r` 刷新，Esc 回状态，`q` 仅退出管理器。worker 执行检查/控制，busy 时拒绝重复操作和退出。配置现打开临时 loopback [SI Console](si_console_v01.md)，显示访问 URL 和 SSH tunnel 命令；`s` 关闭 Web，`q` 等待请求完成后关闭 Web，不停止 Core。原 `si setup` 保留 SetupScreen 终端 fallback。两者复用 env 原子保存；保存不自动启动/重启 runtime。Console 的显式运行按钮委托当前 ManagerService，两边使用同一个 Native backend。窄终端菜单纵向排列；内部状态值与配置字段不翻译。详见 [Deployment UX](deployment_ux_v01.md)。
 
 ## 运行与身份
 

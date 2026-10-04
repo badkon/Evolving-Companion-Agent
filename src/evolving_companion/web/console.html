@@ -1,0 +1,4 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include (('home' if page == '/' else page[1:]) + '.html') %}
+{% endblock %}

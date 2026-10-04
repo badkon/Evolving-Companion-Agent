@@ -1,0 +1,27 @@
+{% from 'forms.html' import field, secret, actions %}
+<section class="card">
+<h2>SnowLuma / OneBot</h2>
+<p data-overview="qq">未验证</p>
+<p class="muted">需自行运行并登录 SnowLuma。WebUI / noVNC 不在此暴露；连接测试通过也不代表真实 QQ 私聊已验收。</p>
+<div class="grid">
+{% for key in ['SI_CHAT_TRANSPORT','SI_ONEBOT_WS_URL','SI_QQ_BOT_USER_ID'] %}{{field(key,fields)}}{% endfor %}
+</div>{{secret('SI_ONEBOT_ACCESS_TOKEN',secrets)}}<button data-action="qq" class="secondary">测试 OneBot / QQ 状态</button>
+</section>
+<section class="card">
+<h2>私聊权限</h2>
+<p>模式：<strong id="permission-mode">读取中</strong>
+</p>
+<p class="muted">仅允许名单内的好友私聊。每次添加一个 QQ 号。</p>
+<div id="allowlist" class="chips" aria-label="允许私聊的 QQ">
+</div>
+<div class="inline">
+<label>添加 QQ 号<input id="qq-id" inputmode="numeric" autocomplete="off">
+</label>
+<button id="add-qq" class="secondary">添加</button>
+</div>
+</section>
+<section class="card">
+<h2>群聊 <span class="badge">当前版本暂未启用</span>
+</h2>
+<p class="muted">群白名单、仅 @ 响应、主动回复、群内允许成员尚未支持；不会保存无效配置。</p>
+</section>{{actions()}}

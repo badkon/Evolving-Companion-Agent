@@ -1,0 +1,20 @@
+<aside id="sidebar" class="sidebar">
+<a class="brand" href="/">SI Console</a>
+<p class="brand-caption">Evolving-Companion-Agent</p>
+<div class="character-mark">
+<span class="avatar" aria-label="角色占位头像">SI</span>
+<div>
+<strong data-identity="working_name">角色</strong>
+<small data-identity="development_id">读取中</small>
+</div>
+</div>
+<nav aria-label="主导航">
+{% for group, paths in [('总览',['/']),('交流',['/chat','/media']),('角色',['/character','/memory']),('服务',['/models','/runtime']),('系统',['/system'])] %}
+<p class="nav-group">{{ group }}</p>
+{% for path in paths %}
+<a href="{{ path }}" {% if path == page %}aria-current="page"{% endif %}>{{ pages[path] }}</a>
+{% endfor %}
+{% endfor %}
+</nav>
+<p class="sidebar-note">白色是界面，粉色是玲。<br>保持清晰，也留一点温度。</p>
+</aside>

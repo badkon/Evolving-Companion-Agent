@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title }} · SI Console</title>
+<link rel="stylesheet" href="/static/setup.css">
+<script src="/static/setup.js" defer>
+</script>
+</head>
+<body data-page="{{ page }}">
+<a class="skip" href="#main">跳到内容</a>
+{% include 'sidebar.html' %}
+<div class="workspace">
+<header class="header">
+<button id="menu" class="quiet" aria-controls="sidebar" aria-expanded="false">菜单</button>
+<span>SI Console <span class="muted">/ {{ title }}</span>
+</span>
+<nav aria-label="快捷导航">
+<a href="/runtime">日志与状态</a>
+<a href="/system">系统</a>
+</nav>
+</header>
+<main id="main">
+<div class="page-heading">
+<div>
+<p class="eyebrow">EVOLVING COMPANION</p>
+<h1>{{ title }}</h1>
+</div>
+<span class="badge">本地管理 · 临时会话</span>
+</div>
+<output id="result" role="status" aria-live="polite">正在加载…</output>
+{% block content %}
+{% endblock %}
+<footer>管理入口，不是聊天窗口。退出管理器会关闭 Console，但不会停止 Core。</footer>
+</main>
+</div>
+</body>
+</html>

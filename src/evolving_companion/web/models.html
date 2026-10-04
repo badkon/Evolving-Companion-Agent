@@ -1,0 +1,16 @@
+{% from 'forms.html' import field, secret, actions %}
+<p class="muted">API/API 部署；不加载本地模型。地址仅由可信操作者设置，测试会向该地址发送所选密钥并产生少量 API 费用。</p>
+{% for title, keys, action in [('语言模型',['SI_LLM_API_URL','SI_LLM_MODEL'],'llm'),('Embedding',['SI_MEMORY_EMBEDDING_API_URL','SI_MEMORY_EMBEDDING_API_ID','SI_MEMORY_EMBEDDING_MODEL','SI_MEMORY_EMBEDDING_DIMENSION'],'embedding'),('Reranker',['SI_MEMORY_RERANKER_API_URL','SI_MEMORY_RERANKER_MODEL'],'reranker')] %}
+<section class="card">
+<h2>{{title}}</h2>
+<div class="grid">
+{% for key in keys %}{{field(key,fields)}}{% endfor %}
+</div>
+<button data-action="{{action}}" class="secondary">测试 {{title}}</button>
+</section>
+{% endfor %}
+<section class="card">
+<h2>API 凭据</h2>
+<p class="muted">已有密钥不回显；保留 / 替换 / 清空需明确选择。环境变量优先于文件。</p>
+<div class="grid">{{secret('DEEPSEEK_API_KEY',secrets)}}{{secret('SILICONFLOW_API_KEY',secrets)}}</div>
+</section>{{actions()}}

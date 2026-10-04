@@ -1,0 +1,29 @@
+<section class="card">
+<h2>Core 运行控制</h2>
+<dl>
+<dt>状态</dt>
+<dd data-status="runtime">读取中</dd>
+<dt>聊天连接</dt>
+<dd data-status="transport">读取中</dd>
+<dt>本地检查</dt>
+<dd data-status="health">未检查</dd>
+<dt>应用版本</dt>
+<dd data-overview="version">读取中</dd>
+</dl>
+<div class="buttons">
+<button data-action="start">启动</button>
+<button data-action="stop" class="secondary">停止</button>
+<button data-action="restart" class="secondary">重启</button>
+<button id="refresh-status" class="quiet">刷新状态</button>
+<button data-action="health" class="quiet">本地检查</button>
+</div>
+<p class="muted">与 SI 管理器共用原生运行控制。启动 / 重启读取已保存的最新配置。运行中 ≠ 聊天 Ready。</p>
+</section>
+<section class="card">
+<div class="section-heading">
+<h2>最近日志</h2>
+<button data-action="logs" class="secondary">刷新日志</button>
+</div>
+<p class="muted">最多 64 KiB / 100 行；已脱敏，不自动高频轮询。</p>
+<pre id="logs">点击刷新读取最近日志。</pre>
+</section>

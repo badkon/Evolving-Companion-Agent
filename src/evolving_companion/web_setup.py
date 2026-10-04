@@ -14,13 +14,14 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route
-from starlette.staticfiles import StaticFiles
+from starlette.responses import FileResponse, JSONResponse
+from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 import uvicorn
 
 from evolving_companion.connection_tests import test_connection
+from evolving_companion.console_services import ConsoleService
+from evolving_companion.manager_services import ManagerService
 from evolving_companion.web_setup_services import (
     CHARACTER_FIELDS,
     FIELDS,
@@ -29,16 +30,70 @@ from evolving_companion.web_setup_services import (
 )
 
 ASSETS = Path(__file__).with_name("web")
+PAGES = {
+    "/": "首页",
+    "/chat": "聊天管理",
+    "/media": "表情与媒体",
+    "/character": "角色配置",
+    "/memory": "记忆管理",
+    "/models": "模型与服务",
+    "/runtime": "运行与日志",
+    "/system": "数据与系统",
+}
 
 
 def create_app(service: WebSetupService, token: str) -> Starlette:
     templates = Jinja2Templates(directory=ASSETS)
+    console = ConsoleService(
+        service.manager
+        or ManagerService(
+            service.env.path,
+            project_root=service.project,
+            environment=service.environment,
+        )
+    )
+    session = secrets.token_urlsafe(32)
+    cookie_name = "si_console_" + secrets.token_hex(8)
+
+    def bearer(request):
+        return secrets.compare_digest(
+            request.headers.get("authorization", "").encode(),
+            f"Bearer {token}".encode(),
+        )
+
+    def authenticated(request):
+        if "authorization" in request.headers:
+            return bearer(request)
+        return secrets.compare_digest(
+            request.cookies.get(cookie_name, "").encode(), session.encode()
+        )
+
+    async def asset(request):
+        name = request.path_params["name"]
+        if name not in {"setup.css", "setup.js"}:
+            return JSONResponse({"message": "不存在的资源。"}, status_code=404)
+        return FileResponse(ASSETS / name)
+
+    async def login(request):
+        if not bearer(request):
+            return JSONResponse({"message": "访问凭证无效。"}, status_code=401)
+        response = JSONResponse({"ok": True})
+        # HTTP is deliberately loopback-only. Session dies with this Console server.
+        response.set_cookie(cookie_name, session, httponly=True, samesite="strict")
+        return response
 
     async def home(request: Request):
+        if not authenticated(request):
+            return templates.TemplateResponse(
+                request, "login.html", {}, status_code=401
+            )
         return templates.TemplateResponse(
             request,
-            "setup.html",
+            "console.html",
             {
+                "page": request.url.path,
+                "title": PAGES[request.url.path],
+                "pages": PAGES,
                 "fields": FIELDS,
                 "secrets": SECRET_LABELS,
                 "character_fields": CHARACTER_FIELDS,
@@ -46,10 +101,7 @@ def create_app(service: WebSetupService, token: str) -> Starlette:
         )
 
     async def api(request: Request):
-        if not secrets.compare_digest(
-            request.headers.get("authorization", "").encode(),
-            f"Bearer {token}".encode(),
-        ):
+        if not authenticated(request):
             return JSONResponse(
                 {"ok": False, "message": "访问凭证无效；请从管理器重新打开地址。"},
                 status_code=401,
@@ -61,7 +113,20 @@ def create_app(service: WebSetupService, token: str) -> Starlette:
             )
         try:
             if request.method == "GET":
-                return JSONResponse(await run_in_threadpool(service.snapshot))
+                action = request.path_params["action"]
+                if action == "state":
+                    data = await run_in_threadpool(service.snapshot)
+                elif action == "overview":
+                    data = await run_in_threadpool(console.overview)
+                elif action == "memories":
+                    data = await run_in_threadpool(
+                        console.memories,
+                        request.query_params.get("q", ""),
+                        int(request.query_params.get("offset", "0")),
+                    )
+                else:
+                    return JSONResponse({"message": "未知操作。"}, status_code=404)
+                return JSONResponse(console.clean(data))
             if (
                 request.headers.get("content-type", "").split(";")[0]
                 != "application/json"
@@ -92,11 +157,15 @@ def create_app(service: WebSetupService, token: str) -> Starlette:
                     lambda: service.effective(service.updates(payload))
                 )
                 result = await run_in_threadpool(test_connection, action, values)
+            elif action in {"start", "stop", "restart", "logs"}:
+                result = await run_in_threadpool(getattr(console.manager, action))
+            elif action == "health":
+                result = await run_in_threadpool(console.manager.check, health=True)
             else:
                 return JSONResponse(
                     {"ok": False, "message": "未知操作。"}, status_code=404
                 )
-            return JSONResponse(asdict(result))
+            return JSONResponse(console.clean(asdict(result)))
         except Exception as error:
             # Never serialize validation input, raw provider errors or tracebacks.
             return JSONResponse(
@@ -109,16 +178,23 @@ def create_app(service: WebSetupService, token: str) -> Starlette:
 
     app = Starlette(
         routes=[
-            Route("/", home),
-            Route("/api/state", api),
-            Route("/api/{action}", api, methods=["POST"]),
-            Mount("/static", StaticFiles(directory=ASSETS)),
+            *[Route(path, home) for path in PAGES],
+            Route("/api/session", login, methods=["POST"]),
+            Route("/api/{action}", api, methods=["GET", "POST"]),
+            Route("/static/{name}", asset),
         ]
     )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
 
     async def headers(request, call_next):
-        response = await call_next(request)
+        origin = request.headers.get("origin")
+        expected = f"http://{request.headers.get('host')}"
+        if (origin and origin != expected) or (
+            request.method == "POST" and not bearer(request) and origin != expected
+        ):
+            response = JSONResponse({"message": "不允许跨站请求。"}, status_code=403)
+        else:
+            response = await call_next(request)
         response.headers.update(
             {
                 "Cache-Control": "no-store",

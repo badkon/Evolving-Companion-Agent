@@ -1,6 +1,6 @@
 # SI Deployment UX v0.1
 
-本轮交付 Native 源码部署的配置闭环，不是 Linux / Docker / SnowLuma 实机验收结论。
+本文保留 Native 源码部署闭环；Web Setup 已重组为 [SI Console v0.1](si_console_v01.md)。用户报告上一版 Linux 安装、Manager、Web Setup、API 测试及 Core 控制已通过，SnowLuma Docker 已部署；真实 QQ 私聊尚未最终验收。本轮 Console 不据此宣称已完成实机验收。
 Core、Conversation、Memory、World、SQLite schema、QQ/OneBot 处理语义不变。
 
 ## 首次运行
@@ -21,14 +21,14 @@ si
 
 1. Manager → 配置，等候显示本机 URL 和 SSH tunnel 命令。
 2. 在自己的电脑执行 `ssh -N -L PORT:127.0.0.1:PORT user@server`（用管理器显示的端口，替换真实 SSH 目标）；保持窗口开启。
-3. 浏览器打开管理器显示的完整 URL（包括 `#` 后临时访问凭证），填写 API 和聊天连接。
+3. 浏览器打开管理器显示的完整 URL（包括 `#` 后临时访问凭证），进入 SI Console，在模型与服务 / 聊天管理填写配置。
 4. 分别测试语言模型、Embedding、Reranker、OneBot；测试会产生极小 API 调用费用。
 5. 保存应用配置 / 角色配置，再执行“检查配置”。保存不自动启动，也不声称已通过检查；可保存缺少密钥的草稿，Start 仍严格拒绝不完整配置。
-6. 返回 Manager（Esc）→ 启动 → 状态 / 日志。运行中进程保留旧配置，修改后需显式重启。
+6. Console → 运行与日志 → 启动，或返回 Manager（Esc）→ 启动 → 状态 / 日志。运行中进程保留旧配置，修改后需显式重启。
 7. `s` 关闭临时网页服务，`q` 退出 Manager：等待进行中的保存完成，只关闭 Web，不停止独立 Core。
 
 不需要开放公网 HTTP 端口。`si setup` 仍是原有终端配置 fallback，不包含新增 Character/连接测试界面。
-Web 页面刷新会丢失内存中的访问凭证，请重新打开管理器的完整链接；关闭再开启会换 token/端口。
+Console 用 fragment token 换取临时 HttpOnly / SameSite=Strict 会话 cookie，刷新和多页导航无需重复贴 token。关闭再开启服务会换 token/端口/会话；cookie 失效后请重新打开管理器的完整链接。
 
 ## 数据与架构
 
@@ -37,7 +37,7 @@ Web 页面刷新会丢失内存中的访问凭证，请重新打开管理器的�
 配置仍只有 `config/si.env`。Manager 原始 OS environment > 当前文件，每次检查/启动重新读取。
 Web Validate 使用原 `runtime_check` 隔离进程，传入当前候选配置；不会修改 Manager 的全局环境。
 Character 仍只有现有 YAML → Pydantic → Projection；不新增 Character schema、秘密数据库或 runtime 初始化链。
-Web 不提供 Core start API；Start/Stop/Restart 仍由 NativeProcessController 完成。
+Console 提供 Core start/stop/restart API，委托同一个 ManagerService / NativeProcessController，不复制进程管理逻辑；记忆浏览通过只读 SQLite 连接，不初始化 Store。
 
 LLM 增加可选 `SI_LLM_API_URL` / `SI_LLM_MODEL`，缺省保持原 DeepSeek URL/model。
 目前是同一个 OpenAI-compatible adapter，不是多 provider router。密钥继续是 `DEEPSEEK_API_KEY`。
@@ -61,7 +61,7 @@ Memory 只配置现有 API embedding/reranker；默认 SiliconFlow Qwen3，能�
 ## 安全与连接测试
 
 - 只绑定 127.0.0.1 随机空闲端口。每次启动生成随机 bearer token，放 URL fragment，不进入 HTTP URL/access log。
-- 所有数据与操作 API 认证；无 CORS，检查 Origin/Host，JSON-only、请求体限额、读取超时。
+- 所有 Console 页面、数据与操作 API 认证；未认证页面只返回 401 登录壳，不含配置。无 CORS，检查 Origin/Host，cookie POST 必须同源；业务写请求 JSON-only、限额、读取超时。公开资源仅固定 CSS/JS，不公开模板。
 - CSP self-only、no-store、no-referrer、frame deny；Jinja autoescape，JS 只用 value/textContent。没有内联脚本或外部 CDN。
 - 现有密钥只返回“已配置/未配置”；保留/替换/清空明确区分，空替换和 masked placeholder 被拒绝。
 - 错误仅安全类别/类型，不回传 raw stderr、Pydantic input、HTTP body/header、URL 或 traceback。
@@ -88,11 +88,10 @@ OneBot 动作参考[官方 v11 API](https://github.com/botuniverse/onebot-11/blo
 自动测试覆盖临时文件、secret roundtrip、并发拒绝、身份保护、schema/非法 YAML、鉴权、Host/Origin、
 安全渲染、原子保存失败、连接测试、安全错误、Web graceful drain、Manager 生命周期。
 集成测试使用 fake 外部 LLM/传输和真实 Core/Conversation/SQLite，覆盖 Web 保存 → Manager fresh Start → none/qq、归档与 send_private_msg。
-`scripts/run_web_setup_smoke.py` 是离线 Web 保存/真实本地 runtime check；另外运行 Manager/Setup headless smoke。
+`scripts/run_web_setup_smoke.py` 启动真实 loopback Console，认证后打开全部八页，执行离线保存/本地 runtime check 并关闭；另外运行 Manager/Setup headless smoke。
 
 Docker 为 P2：保留原 Dockerfile/Compose，只把新静态资源加入 build allowlist，不增加 Docker controller 或另一套配置。
 当前环境没有 Docker 实机验收；不解决 Docker Hub 可达性，不声称 image 已 build 成功。
 
-尚需真实 Ubuntu：`bash install.sh` 重跑、`si`、SSH 转发实际浏览器、真实 API 测试、SnowLuma 登录后配置 QQ、
-Start 后用 allowlist QQ 发一次私聊，确认回复与日志，再 Stop/Restart；退出 Manager 后确认 Core 仍运行。
+用户已报告 Ubuntu 安装、Manager、API 测试、保存/检查、Start/Stop/Restart 和退出 Manager 后 Core 常驻通过；不是本轮重新执行的证据。仍需真实 Ubuntu 验收 Console 的多页导航 / 会话 / 窄屏，及 SnowLuma 登录后用 allowlist QQ 发一次私聊，确认回复与日志。
 Linux pidfd/flock 进程控制仍沿用原限制；Windows 只验证 Web/TUI/fake runtime。无开机自启、supervisor、update、backup UI、自动安装 OneBot 或 Phase C。

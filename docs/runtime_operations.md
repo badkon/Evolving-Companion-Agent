@@ -1,6 +1,6 @@
 # Runtime Configuration / Operations
 
-当前保留可复用的应用能力；源码部署优先使用 [Deployment UX v0.1](deployment_ux_v01.md) 的最小 install.sh、Manager、Web Setup。另保留 [Docker Compose 运行包装](docker_server_deployment_v1.md)。不提供自动更新；Native Manager 不控制 Docker。
+当前保留可复用的应用能力；源码部署优先使用 [Deployment UX v0.1](deployment_ux_v01.md) 的最小 install.sh、Manager、[SI Console](si_console_v01.md)。另保留 [Docker Compose 运行包装](docker_server_deployment_v1.md)。不提供自动更新；Native Manager 不控制 Docker。
 
 ## 能力分类
 
@@ -30,7 +30,7 @@ Manager Start / Restart 使用严格 runtime check，none 也是合法模式，�
 
 加载优先级为显式进程环境变量 > 配置文件；此入口不自动加载开发 `.env.local`。`SI_RUNTIME_DB` 默认 `runtime/si_001.db`，`SI_BACKUP_DIR` 默认 `backups`；相对路径以运行时工作目录为基准，外置路径可显式配置。运行检查前需要创建数据库父目录。终端向导不改 seed；Web 表单可按现 schema 修改 seed，锁定 UUID/正式身份，不修改数据库、不初始化 runtime。保存可缺少密钥，实际 Start 仍严格校验。
 
-Manager Configure 现在启动临时 loopback Web，`s` 关闭，退出 Manager graceful drain；Core 不受影响。Web 连接测试是显式真实请求；状态页本地检查不主动测试 API/QQ。`SI_LLM_API_URL` / `SI_LLM_MODEL` 可覆盖既有 DeepSeek 默认配置，仍使用一个 OpenAI-compatible adapter 和原密钥环境变量。
+Manager Configure 现在启动临时 loopback SI Console，`s` 关闭，退出 Manager graceful drain；Core 不受影响。Console 运行按钮复用 ManagerService / NativeProcessController，记忆页仅只读浏览，不提供数据修改/恢复。Web 连接测试是显式真实请求；状态页本地检查不主动测试 API/QQ。`SI_LLM_API_URL` / `SI_LLM_MODEL` 可覆盖既有 DeepSeek 默认配置，仍使用一个 OpenAI-compatible adapter 和原密钥环境变量。
 
 ## Check / Health / API-only 入口
 

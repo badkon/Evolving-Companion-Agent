@@ -82,7 +82,9 @@ def service(tmp_path: Path, monkeypatch):
         result, "check", lambda **kwargs: OperationResult(True, "Fake local check")
     )
     monkeypatch.setattr(
-        result, "web_setup", lambda: "Web 配置已启动 http://127.0.0.1:1234/#fake-token"
+        result,
+        "web_setup",
+        lambda: "SI Console 已启动 http://127.0.0.1:1234/#fake-token",
     )
     return result
 
@@ -261,7 +263,7 @@ def test_headless_navigation_lifecycle_configure_and_exit(service):
             await pilot.press("enter")
             await app.workers.wait_for_complete()
             assert app.page == "Configure"
-            assert "Web 配置已启动" in str(output.content)
+            assert "SI Console 已启动" in str(output.content)
             await pilot.press("escape")
             await app.workers.wait_for_complete()
             assert app.page == "Status"

@@ -55,7 +55,7 @@ async def smoke(root: Path) -> None:
     )
     app = SIManagerApp(service)
     with (
-        patch.object(service, "web_setup", return_value="Web 配置已启动（fake）"),
+        patch.object(service, "web_setup", return_value="SI Console 已启动（fake）"),
         patch.object(
             service, "check", return_value=OperationResult(True, "Fake local check")
         ),
@@ -79,7 +79,7 @@ async def smoke(root: Path) -> None:
     assert controller.calls == ["start"] and controller.state == "Running"
     assert not service.paths().database.exists() and not service.env_file.exists()
     assert seed.read_bytes() == before
-    print("PASS: Status -> Start -> Logs -> Web Setup (fake) -> Status -> q.")
+    print("PASS: Status -> Start -> Logs -> SI Console (fake) -> Status -> q.")
     print(
         "Fake runtime remains Running after Manager exit; no Core, DB, process or network used."
     )

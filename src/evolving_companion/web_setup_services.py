@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 from threading import RLock
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 import yaml
@@ -22,6 +23,9 @@ from evolving_companion.config_env import (
 )
 from evolving_companion.qq_adapter import _identifier
 from evolving_companion.ui_text import check_text
+
+if TYPE_CHECKING:
+    from evolving_companion.manager_services import ManagerService
 
 # Labels are presentation only. There is no second settings store.
 FIELDS = {
@@ -69,7 +73,15 @@ def revision(text: str) -> str:
 
 
 class WebSetupService:
-    def __init__(self, env_file: Path, project: Path, environment: Mapping[str, str]):
+    def __init__(
+        self,
+        env_file: Path,
+        project: Path,
+        environment: Mapping[str, str],
+        *,
+        manager: "ManagerService | None" = None,
+    ):
+        self.manager = manager
         self.project = project
         self.environment = dict(environment)
         self.env = ApplicationEnvService(env_file, project / "config/si.env.example")

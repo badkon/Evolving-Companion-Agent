@@ -167,7 +167,9 @@ class SIManagerApp(App[None]):
         try:
             await asyncio.to_thread(self.service.close_web_setup)
             self.page = "Status"
-            self.query_one("#result", Static).update("Web 配置已关闭；Core 保持不变。")
+            self.query_one("#result", Static).update(
+                "SI Console 已关闭；Core 保持不变。"
+            )
         finally:
             self.busy = False
         self.action_refresh_page()

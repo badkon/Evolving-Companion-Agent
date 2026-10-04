@@ -1,0 +1,34 @@
+{% macro field(key, fields) %}
+<label>{{ fields[key] }}{% if key == 'SI_CHAT_TRANSPORT' %}
+<select data-config="{{key}}">
+<option value="none">无聊天连接（none）</option>
+<option value="qq">QQ · SnowLuma / OneBot</option>
+</select>
+{% else %}
+<input data-config="{{key}}" autocomplete="off">
+{% endif %}
+</label>
+{% endmacro %}
+{% macro secret(key, secrets) %}
+<div class="secret">
+<label>{{secrets[key]}} <span id="status-{{key}}" class="muted">
+</span>
+<select data-mode="{{key}}">
+<option value="keep">保留</option>
+<option value="replace">替换</option>
+<option value="clear">清空</option>
+</select>
+<input type="password" data-secret="{{key}}" autocomplete="new-password" placeholder="仅替换时填写" disabled>
+</label>
+</div>
+{% endmacro %}
+{% macro actions() %}
+<div class="buttons">
+<button data-action="save">保存本页配置</button>
+<button data-action="validate" class="secondary">检查配置</button>
+<button id="reload" class="quiet">重新加载（放弃未保存内容）</button>
+</div>
+<p id="overrides" class="muted">
+</p>
+<p class="muted">保存不会自动重启 Core；运行中的进程需重启以应用配置。</p>
+{% endmacro %}

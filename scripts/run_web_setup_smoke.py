@@ -1,13 +1,13 @@
-"""Offline Web save/validate smoke. Synthetic keys and temporary paths only."""
+"""Real loopback Console smoke; synthetic keys, temporary paths, no remote API."""
 
 from pathlib import Path
 import os
 import shutil
 from tempfile import TemporaryDirectory
 
-from starlette.testclient import TestClient
+import httpx
 
-from evolving_companion.web_setup import create_app
+from evolving_companion.web_setup import PAGES, WebSetupServer
 from evolving_companion.web_setup_services import WebSetupService
 
 
@@ -32,35 +32,57 @@ def main() -> None:
             if key in os.environ
         }
         service = WebSetupService(root / "config/si.env", root, environment)
-        with TestClient(
-            create_app(service, "fake-smoke-token"),
-            base_url="http://127.0.0.1",
-            headers={"Authorization": "Bearer fake-smoke-token"},
-        ) as web:
-            assert web.get("/").status_code == 200
-            state = web.get("/api/state").json()
-            payload = {
-                "version": state["version"],
-                "secrets": {
-                    name: {"mode": "replace", "value": "fake-smoke-key"}
-                    for name in ("DEEPSEEK_API_KEY", "SILICONFLOW_API_KEY")
-                },
-            }
-            assert web.post("/api/save", json=payload).json()["ok"]
-            result = web.post("/api/validate", json={}).json()
-            assert result["ok"], result["message"]
-            assert "fake-smoke-key" not in web.get("/api/state").text
-            assert web.post(
-                "/api/character",
-                json={
-                    "version": state["character_version"],
-                    "character": {"working_name": "测试角色"},
-                },
-            ).json()["ok"]
+        server = WebSetupServer(service)
+        server.start()
+        try:
+            with httpx.Client(
+                base_url=f"http://127.0.0.1:{server.port}", timeout=60, trust_env=False
+            ) as web:
+                check_console(web, server)
+        finally:
+            server.stop()
+        assert not server.is_running and server.socket.fileno() == -1
         assert not (root / "runtime/si_001.db").exists()
         print(
-            "PASS: authenticated render -> protected save -> real offline runtime check -> Character save; no API or runtime DB."
+            "PASS: real loopback Console -> authenticated eight routes -> protected save/check -> Character save -> clean shutdown; no API or runtime DB."
         )
+
+
+def check_console(web: httpx.Client, server: WebSetupServer) -> None:
+    assert web.get("/").status_code == 401
+    response = web.post(
+        "/api/session", headers={"Authorization": f"Bearer {server.token}"}
+    )
+    assert response.status_code == 200
+    web.headers["Origin"] = f"http://127.0.0.1:{server.port}"
+    for path in PAGES:
+        page = web.get(path)
+        assert page.status_code == 200 and "SI Console" in page.text
+    for asset in ("setup.js", "setup.css"):
+        assert web.get(f"/static/{asset}").status_code == 200
+    assert web.get("/api/memories").json()["items"] == []
+    state = web.get("/api/state").json()
+    payload = {
+        "version": state["version"],
+        "secrets": {
+            name: {"mode": "replace", "value": "fake-smoke-key"}
+            for name in ("DEEPSEEK_API_KEY", "SILICONFLOW_API_KEY")
+        },
+    }
+    assert web.post("/api/save", json=payload).json()["ok"]
+    result = web.post("/api/validate", json={}).json()
+    assert result["ok"], result["message"]
+    overview = web.get("/api/overview")
+    assert overview.status_code == 200 and "fake-smoke-key" not in overview.text
+    assert overview.json()["database_size"] == "尚未初始化"
+    assert "fake-smoke-key" not in web.get("/api/state").text
+    assert web.post(
+        "/api/character",
+        json={
+            "version": state["character_version"],
+            "character": {"working_name": "测试角色"},
+        },
+    ).json()["ok"]
 
 
 if __name__ == "__main__":
