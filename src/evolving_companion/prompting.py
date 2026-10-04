@@ -37,9 +37,12 @@ class PromptBuilder:
         observation: ObservationSnapshot | None = None,
         *,
         affective_managed: bool = False,
+        persona_managed: bool = False,
     ) -> list[Message]:
         system_instructions = self._build_system_instructions()
-        character_context = self._build_character_context()
+        character_context = self._build_character_context(
+            persona_managed=persona_managed
+        )
         state_context = self._build_state_context(
             character_state, affective_managed=affective_managed
         )
@@ -251,5 +254,8 @@ class PromptBuilder:
             )
         )
 
-    def _build_character_context(self) -> str:
-        return f"【关于玲】\n{self.character_context.description}"
+    def _build_character_context(self, *, persona_managed: bool = False) -> str:
+        context = self.character_context
+        if persona_managed and context.core_description is not None:
+            return f"【关于玲】\n{context.core_description}\n【Character Voice】\n{context.voice}"
+        return f"【关于玲】\n{context.description}"

@@ -138,11 +138,15 @@ class ExpressionSelector:
         intent: ExpressionIntent,
         target_text: str,
         affect: AffectiveSnapshot | None = None,
+        *,
+        limit: int = 3,
     ) -> tuple[ExpressionHabit, ...]:
+        if not 0 <= limit <= 3:
+            raise ValueError("Expression limit must be between zero and three")
         pool = list(self.candidates(intent, target_text, affect))
         selected: list[ExpressionHabit] = []
         # 0–3: empty is valid; weighted sampling without replacement, no fixed template.
-        for _ in range(min(3, len(pool))):
+        for _ in range(min(limit, len(pool))):
             if selected and self.rng.random() < 0.5:
                 break
             index = self.rng.choices(range(len(pool)), weights=[s for _, s in pool])[0]

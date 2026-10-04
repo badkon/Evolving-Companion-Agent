@@ -1,13 +1,125 @@
 """Project authoritative seed data into a prompt-facing context."""
 
 from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from hashlib import sha256
+from typing import Literal
 
 from evolving_companion.character_data import CharacterSeedData
 
 
 @dataclass(frozen=True)
+class CharacterTrait:
+    """Seed-derived, ephemeral projection; never a learned personality record."""
+
+    id: str
+    category: Literal["like", "dislike", "personality", "social"]
+    content: str
+    cues: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ProjectedCharacterContext:
     description: str
+    core_description: str | None = None
+    voice: str = ""
+    traits: tuple[CharacterTrait, ...] = ()
+
+
+# Topic equivalences route existing Seed content, not new preferences or answers.
+TOPIC_CUES = (
+    ("恐怖", "惊悚", "吓人", "鬼片", "jump scare", "jumpscare"),
+    ("辣", "辣椒", "麻辣", "火锅"),
+    ("故事", "剧情", "小说", "叙事", "结局"),
+    ("音乐", "听歌", "歌曲", "旋律", "歌单"),
+    ("轻音乐", "纯音乐", "舒缓"),
+    ("动漫", "动画", "番剧", "动画歌"),
+    ("游戏", "打游戏", "玩什么"),
+    ("虫子", "昆虫", "蟑螂"),
+    ("香菜", "芫荽"),
+    ("皮蛋", "松花蛋"),
+)
+
+
+def _trait(category: Literal["like", "dislike"], text: str) -> CharacterTrait:
+    cues = {text.casefold()}
+    for group in TOPIC_CUES:
+        if any(word in text.casefold() for word in group):
+            cues.update(group)
+    return CharacterTrait(
+        category + "_" + sha256(text.encode()).hexdigest()[:12],
+        category,
+        ("喜欢" if category == "like" else "不喜欢") + text,
+        tuple(sorted(cues)),
+    )
+
+
+def select_trait_candidates(
+    character: ProjectedCharacterContext,
+    text: str,
+    history: Sequence[Mapping[str, str]] = (),
+    *,
+    familiar: bool = False,
+) -> tuple[CharacterTrait, ...]:
+    """Bounded local preselection; the Planner still chooses zero to three traits.
+
+    Only explicit continuations borrow the last user topic. Memory and assistant
+    suggestions cannot redefine preferences. These cues are not a semantic judge.
+    """
+    current = text.casefold()
+    continuation = any(
+        cue in current
+        for cue in ("试一下", "试试嘛", "那个呢", "这个呢", "还是不", "为什么不")
+    )
+    explicit_topic = any(
+        cue in current
+        for trait in character.traits
+        if trait.category in {"like", "dislike"}
+        for cue in trait.cues
+    )
+    if continuation and not explicit_topic:
+        previous = [m["content"] for m in history if m["role"] == "user"]
+        for previous_text in reversed(previous[-3:]):
+            current += " " + previous_text[:800].casefold()
+            if not any(
+                cue in previous_text
+                for cue in (
+                    "试一下",
+                    "试试嘛",
+                    "那个呢",
+                    "这个呢",
+                    "还是不",
+                    "为什么不",
+                )
+            ):
+                break
+    scored = []
+    asks_likes = any(
+        cue in current
+        for cue in (
+            "你喜欢什么",
+            "你喜欢做什么",
+            "你的爱好",
+            "你有什么爱好",
+            "你有什么兴趣",
+        )
+    )
+    asks_dislikes = any(cue in current for cue in ("你不喜欢什么", "你讨厌什么"))
+    for trait in character.traits:
+        if trait.id == "social_familiar" and not familiar:
+            continue
+        if trait.id == "social_strangers" and familiar:
+            continue
+        hits = sum(cue in current for cue in trait.cues)
+        if (trait.category == "like" and asks_likes) or (
+            trait.category == "dislike" and asks_dislikes
+        ):
+            hits += 1
+        if hits:
+            score = hits + (4 if trait.category == "dislike" else 0)
+            scored.append((score, trait))
+    scored.sort(key=lambda item: (-item[0], item[1].id))
+    return tuple(trait for _, trait in scored[:6])
 
 
 class CharacterProjector:
@@ -17,10 +129,6 @@ class CharacterProjector:
         identity = seed.identity
         personality = seed.personality
         social = personality.social_tendencies
-        behavior = seed.behavioral_boundaries
-        knowledge = seed.knowledge_boundaries
-        preferences = seed.seed_preferences
-        capabilities = seed.seed_capabilities
         behavior = seed.behavioral_boundaries
         knowledge = seed.knowledge_boundaries
         preferences = seed.seed_preferences
@@ -111,6 +219,52 @@ class CharacterProjector:
                     preferences_description,
                     capabilities_description,
                 )
+            ),
+            core_description="\n".join(
+                (
+                    identity_description,
+                    behavior_description,
+                    knowledge_description,
+                    capabilities_description,
+                )
+            ),
+            voice=personality_description,
+            traits=(
+                *(_trait("like", text) for text in preferences.likes),
+                *(_trait("dislike", text) for text in preferences.dislikes),
+                CharacterTrait(
+                    "personality",
+                    "personality",
+                    personality_description,
+                    (
+                        "你觉得",
+                        "你自己",
+                        "你的想法",
+                        "离谱",
+                        "好胜",
+                        "调皮",
+                        "开玩笑",
+                        "逗你",
+                    ),
+                ),
+                CharacterTrait(
+                    "social_familiar",
+                    "social",
+                    social.familiar_people,
+                    ("下课", "熬夜", "跑通", "离谱", "逗你", "聊聊"),
+                ),
+                CharacterTrait(
+                    "social_strangers",
+                    "social",
+                    social.strangers,
+                    ("初次", "第一次", "认识你", "不熟"),
+                ),
+                CharacterTrait(
+                    "social_solitude",
+                    "social",
+                    social.solitude,
+                    ("独处", "一个人", "寂寞"),
+                ),
             ),
         )
 

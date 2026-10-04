@@ -17,6 +17,11 @@ from evolving_companion.affective import (
     significant_event,
 )
 from evolving_companion.affective_store import AffectiveStore
+from evolving_companion.character_projection import (
+    CharacterTrait,
+    ProjectedCharacterContext,
+    select_trait_candidates,
+)
 
 from evolving_companion.expression import (
     BASE_REPLY_STYLE,
@@ -33,6 +38,7 @@ from evolving_companion.reply_planning import (
     ReplyGuidance,
     ReplyPlanner,
     ReplyTarget,
+    PersonaRelevance,
 )
 
 PLANNER_MAX_TOKENS = 1280
@@ -58,6 +64,10 @@ class ReplyDiagnostics:
     planner_completion_tokens: int | None
     affective_seconds: float = 0
     affective_error: str | None = None
+    persona_candidates: int = 0
+    active_traits: int = 0
+    persona_strength: str = "none"
+    trait_selection_seconds: float = 0
 
 
 class Replyer:
@@ -72,6 +82,8 @@ class Replyer:
         intent: ExpressionIntent,
         habits: Sequence[ExpressionHabit],
         temporary_style: TemporaryStyle | None,
+        *,
+        active_traits: Sequence[CharacterTrait] = (),
     ) -> list[Message]:
         # Context includes the existing authority/Memory/State/World/time projection.
         messages = [dict(m) for m in context]
@@ -89,6 +101,16 @@ class Replyer:
             f"{GROUNDING}\n"
             f"基础表达：{BASE_REPLY_STYLE}\n"
         )
+        instructions += (
+            "【角色立场与表达】Character Voice 是稳定性格及社交倾向，基础表达只是语言组织。"
+            "本轮特征只取下方 active_traits；未选中的喜恶未知，不自行补齐。"
+            "稳定立场优先于关系距离、当前情绪心情，再优先于习惯和临时风格。"
+            "高兴、熟悉、礼貌或 Memory 中用户的推荐，不会把稳定厌恶变成喜欢。"
+            "medium/high 相关时，内部检查是否只是泛化助手回应；必要时用真实立场或自身反应"
+            "体现一点差异，不加戏，不固定吐槽、口癖、追问。none 时直接简单回答即可。"
+            "事实边界仍优先；用自然口语说明限制，不朗读系统规则，不编造活动、共同在场，"
+            "不承诺现实见面或将玩笑变成未来约定。\n"
+        )
         brief = {
             "guidance": {"reply_reference": guidance.reply_reference},
             "expression_intent": intent.model_dump(),
@@ -96,6 +118,8 @@ class Replyer:
                 {"situation": h.situation, "style": h.style} for h in habits
             ],
             "temporary_style": temporary_style.text if temporary_style else None,
+            "persona_strength": guidance.persona_relevance.strength,
+            "active_traits": [t.content for t in active_traits],
         }
         messages.insert(
             1,
@@ -140,9 +164,16 @@ class NaturalReplyPipeline:
         self.affective_store = affective_store
         self.last_affective_snapshot: AffectiveSnapshot | None = None
         self.last_significant_event: SignificantAffectiveEvent | None = None
+        self.last_persona_relevance = PersonaRelevance()
+        self.last_trait_candidates: tuple[CharacterTrait, ...] = ()
 
     def reply(
-        self, context: list[Message], target: ReplyTarget, event: Event | None = None
+        self,
+        context: list[Message],
+        target: ReplyTarget,
+        event: Event | None = None,
+        *,
+        character: ProjectedCharacterContext | None = None,
     ) -> str:
         self.last_diagnostics = None
         planner_error = None
@@ -150,6 +181,8 @@ class NaturalReplyPipeline:
         affective_seconds = 0.0
         self.last_affective_snapshot = None
         self.last_significant_event = None
+        self.last_persona_relevance = PersonaRelevance()
+        self.last_trait_candidates = ()
         original_context = [dict(m) for m in context]
         if self.affective_store is not None and event is not None:
             tick = perf_counter()
@@ -176,14 +209,35 @@ class NaturalReplyPipeline:
                     "affective_read_failed: %s", affective_error
                 )
             affective_seconds += perf_counter() - tick
+        tick = perf_counter()
+        persona_managed = (
+            character is not None and character.core_description is not None
+        )
+        if persona_managed:
+            assert character is not None
+            history = [m for m in context if m["role"] in {"user", "assistant"}]
+            if target.kind == "user_message":
+                history = history[:-1]
+            self.last_trait_candidates = select_trait_candidates(
+                character,
+                target.text,
+                history,
+                familiar=self.last_affective_snapshot is not None
+                and self.last_affective_snapshot.relationship.stage
+                in {"familiar", "close"},
+            )
+        trait_seconds = perf_counter() - tick
+        candidates = self.last_trait_candidates if persona_managed else None
         planner_messages: list[Message] = []
         planner_start = perf_counter()
         try:
             appraise = self.affective_store is not None and event is not None
             planner_messages = self.planner.build_messages(
-                context, target, appraise=appraise
+                context, target, appraise=appraise, persona_candidates=candidates
             )
-            guidance = self.planner.plan(planner_messages, appraise=appraise)
+            guidance = self.planner.plan(
+                planner_messages, appraise=appraise, persona_candidates=candidates
+            )
         except Exception as error:
             # Explicit degraded turn, not a silent alternative planner or an API retry.
             planner_error = type(error).__name__
@@ -197,7 +251,7 @@ class NaturalReplyPipeline:
                 tone="casual",
                 prefer=("direct",),
                 avoid=("playful",),
-                reply_reference="规划不可用；自行判断当前问题，必要时澄清，不默认追问续聊。",
+                reply_reference="规划不可用；依据上下文回应，不编造自己的喜恶或鼓励接受未经确认的提议；必要时澄清，不默认追问续聊。",
             )
         planned = perf_counter()
         if not planner_error and self.affective_store is not None and event is not None:
@@ -235,18 +289,35 @@ class NaturalReplyPipeline:
         intent = condition_intent(
             guidance.expression_intent(), self.last_affective_snapshot
         )
+        self.last_persona_relevance = guidance.persona_relevance
+        active_traits = tuple(
+            t
+            for t in self.last_trait_candidates
+            if t.id in guidance.persona_relevance.active_traits
+        )
         habits = (
             ()
             if planner_error
-            else self.selector.select(intent, target.text, self.last_affective_snapshot)
+            else self.selector.select(
+                intent,
+                target.text,
+                self.last_affective_snapshot,
+                limit=1 if active_traits else 3,
+            )
         )
         style = (
             None
-            if planner_error
+            if planner_error or active_traits
             else self.selector.temporary_style(intent, self.last_affective_snapshot)
         )
         reply_messages = self.replyer.build_messages(
-            context, target, guidance, intent, habits, style
+            context,
+            target,
+            guidance,
+            intent,
+            habits,
+            style,
+            active_traits=active_traits,
         )
         selected = perf_counter()
         try:
@@ -269,6 +340,10 @@ class NaturalReplyPipeline:
                 usage.completion_tokens if usage else None,
                 affective_seconds,
                 affective_error,
+                len(self.last_trait_candidates),
+                len(active_traits),
+                guidance.persona_relevance.strength,
+                trait_seconds,
             )
             logging.getLogger(__name__).debug(
                 "reply_pipeline: %s", asdict(self.last_diagnostics)

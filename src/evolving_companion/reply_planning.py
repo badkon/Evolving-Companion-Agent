@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from evolving_companion.prompting import Message
 from evolving_companion.affective import AffectiveAppraisal, GROUNDING
+from evolving_companion.character_projection import CharacterTrait
 
 ReplyAct = Literal[
     "greet",
@@ -93,8 +94,41 @@ class ExpressionIntent(BaseModel):
         return self
 
 
+class PersonaRelevance(BaseModel):
+    """Turn-local selection; IDs resolve only against this turn's Seed projection."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    active_traits: tuple[str, ...] = Field(default=(), max_length=3)
+    strength: Literal["none", "low", "medium", "high"] = "none"
+    reason: Annotated[str, Field(min_length=1, max_length=160)] = (
+        "本轮无需突出角色特征。"
+    )
+
+    @model_validator(mode="after")
+    def consistent_selection(self) -> "PersonaRelevance":
+        if len(set(self.active_traits)) != len(self.active_traits):
+            raise ValueError("Duplicate active traits")
+        if bool(self.active_traits) != (self.strength != "none"):
+            raise ValueError("Trait strength must match selection")
+        return self
+
+
+PERSONA_RULES = """【角色相关规划】
+persona_candidates 是从稳定角色设定预筛选的候选，不是必须激活的清单。
+结合当前 scene、reply_act、语境与关系，选择 0–3 个候选 ID，写入 persona_relevance
+（active_traits/strength/reason）。无关、简单确认、事实问题可以为 []/none，勿硬演人格。
+内部对比：普通聊天助手会怎样回应？玲在这个场景有什么有依据的不同反应？
+只把确实相关的差异写入 prefer、tone、reply_reference 和 active_traits，不输出对比过程。
+明确触及稳定喜恶时，规划体现自己的立场而非通用鼓励体验；礼貌、开心、熟悉和用户推荐
+都不能把不喜欢变成喜欢。Memory 只补充往事，不覆盖稳定设定。不要编造候选外的喜恶。
+优先级：事实/身份边界 > 稳定角色立场 > 关系距离 > 当前情绪心情 > 表达习惯/临时风格。
+关系只调距离，情绪只调当下表达；兴趣可以影响注意力，不强制追问、吐槽或自我介绍。
+"""
+
+
 class ReplyGuidance(ExpressionIntent):
     reply_reference: ShortText
+    persona_relevance: PersonaRelevance = Field(default_factory=PersonaRelevance)
 
     def expression_intent(self) -> ExpressionIntent:
         return ExpressionIntent.model_validate(
@@ -164,7 +198,12 @@ class ReplyPlanner:
         self.client = client
 
     def build_messages(
-        self, context: Sequence[Message], target: ReplyTarget, *, appraise: bool = False
+        self,
+        context: Sequence[Message],
+        target: ReplyTarget,
+        *,
+        appraise: bool = False,
+        persona_candidates: Sequence[CharacterTrait] | None = None,
     ) -> list[Message]:
         # Preserve all authoritative boundary text; limit data, never silently clip rules.
         system = "\n\n".join(m["content"] for m in context if m["role"] == "system")
@@ -181,33 +220,55 @@ class ReplyPlanner:
                 else text[:limit] + " [内容截断，不推断省略部分]"
             )
 
-        payload = {
+        payload: dict[str, object] = {
             "history": [
                 {"role": m["role"], "content": excerpt(m["content"], 800)}
                 for m in history[-12:]
             ],
             "target": {"kind": target.kind, "text": excerpt(target.text, 6000)},
         }
+        if persona_candidates is not None:
+            payload["persona_candidates"] = [
+                {"id": t.id, "category": t.category, "content": t.content}
+                for t in persona_candidates
+            ]
+        schema = (
+            AppraisedReplyGuidance if appraise else ReplyGuidance
+        ).model_json_schema()
+        if persona_candidates is not None:
+            # Default keeps old programmatic guidance compatible; production LLM
+            # output must explicitly decide relevance, including the empty choice.
+            schema["required"].append("persona_relevance")
         return [
             {"role": "system", "content": system},
             {
                 "role": "system",
                 "content": PLANNER_RULES
+                + (PERSONA_RULES if persona_candidates is not None else "")
                 + (APPRAISAL_RULES if appraise else "")
-                + json.dumps(
-                    (
-                        AppraisedReplyGuidance if appraise else ReplyGuidance
-                    ).model_json_schema(),
-                    ensure_ascii=False,
-                ),
+                + json.dumps(schema, ensure_ascii=False),
             },
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ]
 
-    def plan(self, messages: list[Message], *, appraise: bool = False) -> ReplyGuidance:
+    def plan(
+        self,
+        messages: list[Message],
+        *,
+        appraise: bool = False,
+        persona_candidates: Sequence[CharacterTrait] | None = None,
+    ) -> ReplyGuidance:
         raw = self.client.complete(messages)
         if len(raw) > 6000:
             raise ValueError("Planning output exceeds budget")
-        return (
+        guidance = (
             AppraisedReplyGuidance if appraise else ReplyGuidance
         ).model_validate_json(raw)
+        if persona_candidates is not None:
+            if "persona_relevance" not in guidance.model_fields_set:
+                raise ValueError("Missing persona relevance")
+            if not set(guidance.persona_relevance.active_traits) <= {
+                t.id for t in persona_candidates
+            }:
+                raise ValueError("Unknown active trait")
+        return guidance

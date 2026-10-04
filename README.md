@@ -7,6 +7,10 @@
 `SI_REPLY_PIPELINE=legacy` 可切回原路径，未配置时为 `natural`。每轮回复侧增加一次有预算的规划调用；
 Memory/Character/World 边界不变。用户已报告原 QQ 链路打通，新管线的真实 QQ 自然度仍待验收。
 
+[Persona Activation & Character Distinctiveness v1](docs/persona_activation_v1.md)
+从现有 Seed 预筛选特征，由同一次 Planner 选择 0–3 条交给 Replyer；保留简单回复、稳定立场和
+Grounding，不新增人格状态或第三次主回复调用。合成测试不代表真实 QQ 自然度已验收。
+
 ## 快速开始（Ubuntu 源码部署）
 
 默认自然回复已接入 [Affective & Relationship State v1](docs/affective_relationship_state_v1.md)：

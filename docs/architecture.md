@@ -20,6 +20,12 @@ ReplyPlanner → ReplyGuidance → ExpressionIntent → ExpressionSelector → R
 formation 完成边界不变；`SI_REPLY_PIPELINE=legacy` 保留原单次生成路径。
 具体机制、失败降级、成本和 MaiBot 功能映射见 [Natural Conversation Pipeline v1](natural_conversation_pipeline_v1.md)。
 
+[Persona Activation v1](persona_activation_v1.md) 在现有 CharacterProjector 中生成 Seed-derived
+trait pool、核心边界与 Character Voice。自然路径本地预筛选最多 6 条候选，同一次
+Planner/Appraisal 选择 0–3 个经校验的 trait ID；Replyer 仅接收已选语义，不接收整个偏好池。
+优先级为事实边界、稳定立场、关系距离、当前情绪心情、表达习惯；traits 不写入任何长期状态。
+legacy 仍使用原完整角色描述；未改 Seed、Memory/World schema、QQ 或 Runtime 生命周期。
+
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
 A2 v0.1 将初始 Seed Character Data 独立存放在 `data/characters/si_001.yaml`，数据路径为 YAML → Pydantic validation → Character Projection → PromptBuilder → LLM。

@@ -43,6 +43,9 @@ SI_REPLY_PIPELINE=natural
 - `reply_reference` 是重点和依据，不是最终答案；不创建事实或授权行为。
 - `Replyer` 原样接收原 PromptBuilder 的完整身份、Memory/State/Time/Life/Observation
   区块和当前 history，追加一份紧凑表达 brief。原始当前 user 消息仍在列表最后。
+  Persona Activation v1 起，自然路径的 Character 区块使用核心边界 + 紧凑 Voice，
+  偏好池不再整段注入，而由 Planner 在本地候选中选择最多 3 条；详见
+  [Persona Activation](persona_activation_v1.md)。Reply Guidance 新增 persona_relevance。
   输出不做字符串黑名单、删问号、补长或拆气泡。
 - `ReplyTarget` 明确区分 user_message 和 trusted contextual_trigger。
   user target 必须与最后一条消息相符。未来调用者可提交上下文触发，但本轮没有事件生产、
@@ -67,6 +70,9 @@ Base Reply Style 独立于 Character Identity：日常口语、长短随语境�
 TemporaryStyle 有安静、轻快、随意、玩笑、利落五种轻度修饰：按 tone/avoid 筛选，
 25% 概率选取，使用后两轮冷却；clarify 不叠加随机修饰。
 这不是情绪状态，也不会让角色声称自己正在做某件事。
+
+Persona Activation：本轮有 active traits 时仅保留最多一条已选习惯，并不叠加临时风格；
+空特征时仍沿用上述选择方式。24 条习惯保持不变，不能定义或覆盖角色喜恶。
 
 ## 4. 成本、失败和隐私
 

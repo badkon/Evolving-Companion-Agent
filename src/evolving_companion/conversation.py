@@ -228,6 +228,7 @@ class Conversation:
             observation,
             affective_managed=self._reply_pipeline is not None
             and self._reply_pipeline.affective_store is not None,
+            persona_managed=self._reply_pipeline is not None,
         )
         event = (
             Event(
@@ -246,7 +247,12 @@ class Conversation:
             else None
         )
         reply = (
-            self._reply_pipeline.reply(messages, ReplyTarget(user_message), event)
+            self._reply_pipeline.reply(
+                messages,
+                ReplyTarget(user_message),
+                event,
+                character=self._prompt_builder.character_context,
+            )
             if self._reply_pipeline is not None
             else self._llm_client.complete(messages)
         )
