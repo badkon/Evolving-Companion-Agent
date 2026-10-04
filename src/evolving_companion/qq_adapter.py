@@ -4,11 +4,22 @@ from collections import OrderedDict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Literal, Protocol
+from typing import Literal, Protocol, runtime_checkable
+from uuid import UUID, NAMESPACE_URL, uuid5
 
 
 class ConversationPort(Protocol):
     def send(self, user_message: str) -> str: ...
+
+
+@runtime_checkable
+class TargetedConversationPort(Protocol):
+    def send_for(self, user_message: str, target_id: UUID) -> str: ...
+
+
+def relation_target_id(sender_id: int | str) -> UUID:
+    """Stable pseudonymous routing key, not a secret or proof of anonymity."""
+    return uuid5(NAMESPACE_URL, "si:qq-private:" + _identifier(sender_id, user=True))
 
 
 @dataclass(frozen=True)
@@ -118,7 +129,13 @@ class QQPrivateChatAdapter:
         if len(self._seen) > self._dedup_capacity:
             self._seen.popitem(last=False)
         try:
-            reply = self._conversation.send(message.text)
+            reply = (
+                self._conversation.send_for(
+                    message.text, relation_target_id(message.sender_id)
+                )
+                if isinstance(self._conversation, TargetedConversationPort)
+                else self._conversation.send(message.text)
+            )
         except Exception:
             # Never expose provider details or synthesize Character speech.
             return AdapterHandlingResult("failed", reason="conversation_failed")

@@ -5,6 +5,7 @@ import json
 from typing import Protocol
 
 from evolving_companion.character_projection import ProjectedCharacterContext
+from evolving_companion.affective import GROUNDING
 from evolving_companion.character_state import CharacterState
 from evolving_companion.character_life import ProjectedLifeContext
 from evolving_companion.observation import ObservationSnapshot
@@ -34,10 +35,14 @@ class PromptBuilder:
         character_time: CharacterTimeSnapshot | None = None,
         character_life_context: ProjectedLifeContext | None = None,
         observation: ObservationSnapshot | None = None,
+        *,
+        affective_managed: bool = False,
     ) -> list[Message]:
         system_instructions = self._build_system_instructions()
         character_context = self._build_character_context()
-        state_context = self._build_state_context(character_state)
+        state_context = self._build_state_context(
+            character_state, affective_managed=affective_managed
+        )
         memory_context = self._build_memory_context(recalled_memories)
         time_context = self._build_time_context(character_time)
         life_context = self._build_life_context(
@@ -149,7 +154,9 @@ class PromptBuilder:
         return "\n".join(lines)
 
     @staticmethod
-    def _build_state_context(state: CharacterState | None) -> str:
+    def _build_state_context(
+        state: CharacterState | None, *, affective_managed: bool = False
+    ) -> str:
         if state is None:
             return ""
         activity = state.current_activity or "未特别记录"
@@ -167,7 +174,11 @@ class PromptBuilder:
         return "\n".join(
             (
                 "【玲当前状态】",
-                f"精力：{labels[state.energy]}；注意力：{labels[state.attention]}；心境倾向：{labels[state.mood_tendency]}；社交投入：{labels[state.social_engagement]}。",
+                (
+                    f"任务精力：{labels[state.energy]}；注意力：{labels[state.attention]}。心境与交流意愿见独立情绪上下文。"
+                    if affective_managed
+                    else f"精力：{labels[state.energy]}；注意力：{labels[state.attention]}；心境倾向：{labels[state.mood_tendency]}；社交投入：{labels[state.social_engagement]}。"
+                ),
                 f"当前活动：{activity}。",
                 "这些只是当前状态线索，可轻微影响表达方式；不代表人格、身份或长期记忆。",
             )
@@ -223,6 +234,7 @@ class PromptBuilder:
                 "模型知识不能自动视为 Character 本人已知信息。",
                 "Origin Records 不是 Lived Memory，也不是 Character 的亲历记忆。",
                 "只依据当前上下文回答；对无法确认的信息承认不确定。",
+                GROUNDING,
                 "如果用户问题依赖的前提并不成立，可以直接指出前提不成立；不要从其他角色资料中寻找替代内容来补全答案。",
                 "日常对话使用自然口语，回复长短随语境变化，不要求固定长短。",
                 "能一句话说清楚时就直接回答，不主动扩成长段、总结、升华或重复结论。",

@@ -2,7 +2,8 @@
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
+from evolving_companion.affective import SignificantAffectiveEvent
 
 from evolving_companion.memory_consolidation import (
     MemoryConsolidationResult,
@@ -28,6 +29,25 @@ class MemoryFormationPort(Protocol):
         user_archive_message: Mapping[str, str],
         assistant_archive_message: Mapping[str, str],
     ) -> "MemoryFormationResult": ...
+
+
+@runtime_checkable
+class AffectiveFormationPort(Protocol):
+    def process_turn_with_affect(
+        self,
+        user_archive_message: Mapping[str, str],
+        assistant_archive_message: Mapping[str, str],
+        hint: SignificantAffectiveEvent,
+    ) -> "MemoryFormationResult": ...
+
+
+@runtime_checkable
+class AffectiveExtractionPort(Protocol):
+    def extract_with_affect(
+        self,
+        messages: Sequence[ArchiveChunkMessage | Mapping[str, str]],
+        hint: SignificantAffectiveEvent,
+    ) -> MemoryExtractionResult: ...
 
 
 class MemoryConsolidationPort(Protocol):
@@ -64,6 +84,22 @@ class MemoryFormationService:
         user_archive_message: Mapping[str, str],
         assistant_archive_message: Mapping[str, str],
     ) -> MemoryFormationResult:
+        return self._process_turn(user_archive_message, assistant_archive_message)
+
+    def process_turn_with_affect(
+        self,
+        user_archive_message: Mapping[str, str],
+        assistant_archive_message: Mapping[str, str],
+        hint: SignificantAffectiveEvent,
+    ) -> MemoryFormationResult:
+        return self._process_turn(user_archive_message, assistant_archive_message, hint)
+
+    def _process_turn(
+        self,
+        user_archive_message: Mapping[str, str],
+        assistant_archive_message: Mapping[str, str],
+        hint: SignificantAffectiveEvent | None = None,
+    ) -> MemoryFormationResult:
         chunk = (
             ArchiveChunkMessage.model_validate(user_archive_message),
             ArchiveChunkMessage.model_validate(assistant_archive_message),
@@ -71,7 +107,13 @@ class MemoryFormationService:
         if chunk[0].role != "user" or chunk[1].role != "assistant":
             raise ValueError("memory formation requires a user/assistant turn pair")
 
-        result = self._extractor.extract_memories(chunk)
+        result = (
+            self._extractor.extract_with_affect(chunk, hint)
+            if hint is not None
+            and str(hint.source_event_id) == chunk[0].id
+            and isinstance(self._extractor, AffectiveExtractionPort)
+            else self._extractor.extract_memories(chunk)
+        )
         saved = persist_saved_candidates(result, chunk, self._store)
         consolidation_results: list[MemoryConsolidationResult] = []
         if self._consolidation_service is not None:

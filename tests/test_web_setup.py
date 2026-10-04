@@ -346,6 +346,23 @@ def test_web_save_manager_fresh_start_existing_runtime_and_qq_reply(
                         "prefer": ["brief"],
                         "avoid": ["curiosity"],
                         "reply_reference": "自然回应招呼，不强行续聊。",
+                        "event_significance": 0.05,
+                        "appraisal": {
+                            "relevance": 0.3,
+                            "valence": 0.1,
+                            "novelty": 0,
+                            "social_meaning": "ordinary",
+                            "reality": "user_reported",
+                        },
+                        "emotion_impulses": {},
+                        "relationship_signal": {
+                            "meaningful": False,
+                            "dimensions": [],
+                            "direction": "none",
+                            "strength": "mild",
+                        },
+                        "cause_summary": "合成问候",
+                        "worth_remembering": False,
                     }
                 )
             if "Memory Extraction" in messages[0]["content"]:

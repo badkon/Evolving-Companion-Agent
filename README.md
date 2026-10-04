@@ -9,6 +9,10 @@ Memory/Character/World 边界不变。用户已报告原 QQ 链路打通，新�
 
 ## 快速开始（Ubuntu 源码部署）
 
+默认自然回复已接入 [Affective & Relationship State v1](docs/affective_relationship_state_v1.md)：
+同一次 Planner 完成 Appraisal，独立持久化 Emotion / Mood / 按用户关系；新状态影响表达。
+主要用户熟人关系只初始化一次、非恋爱；没有第三次情绪 LLM 或主动消息。新 QQ 行为仍待验收。
+
 先 clone 本仓库；在已安装 Python 3.12 和 `python3.12-venv` 的环境，以同一个普通用户执行：
 
 ```bash

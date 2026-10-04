@@ -1,4 +1,4 @@
-"""Production planning → expression selection → replyer, without side effects."""
+"""Production planning → affect update → expression selection → replyer."""
 
 from collections.abc import Mapping, Sequence
 from contextlib import ExitStack
@@ -7,11 +7,22 @@ import json
 import logging
 import os
 from time import perf_counter
+from evolving_companion.affective import (
+    AffectiveAppraisal,
+    AffectiveSnapshot,
+    Event,
+    GROUNDING,
+    project_affective,
+    SignificantAffectiveEvent,
+    significant_event,
+)
+from evolving_companion.affective_store import AffectiveStore
 
 from evolving_companion.expression import (
     BASE_REPLY_STYLE,
     ExpressionSelector,
     TemporaryStyle,
+    condition_intent,
 )
 from evolving_companion.expression_habits import ExpressionHabit
 from evolving_companion.llm import LLMClient
@@ -24,7 +35,7 @@ from evolving_companion.reply_planning import (
     ReplyTarget,
 )
 
-PLANNER_MAX_TOKENS = 768
+PLANNER_MAX_TOKENS = 1280
 PLANNER_TIMEOUT = 8.0
 
 
@@ -45,6 +56,8 @@ class ReplyDiagnostics:
     replyer_added_characters: int
     planner_prompt_tokens: int | None
     planner_completion_tokens: int | None
+    affective_seconds: float = 0
+    affective_error: str | None = None
 
 
 class Replyer:
@@ -73,6 +86,7 @@ class Replyer:
             "未知当前活动就承认没有具体信息，不用发呆、休息、上课或环境细节补空白。"
             "临时风格只影响本轮措辞，不改变人格、亲密程度或真实状态。"
             "只输出角色回复，不输出规划、标签或解释为何这样说。\n"
+            f"{GROUNDING}\n"
             f"基础表达：{BASE_REPLY_STYLE}\n"
         )
         brief = {
@@ -117,20 +131,59 @@ class NaturalReplyPipeline:
         planner: ReplyPlanner,
         replyer: Replyer,
         selector: ExpressionSelector | None = None,
+        affective_store: AffectiveStore | None = None,
     ) -> None:
         self.planner = planner
         self.replyer = replyer
         self.selector = selector or ExpressionSelector()
         self.last_diagnostics: ReplyDiagnostics | None = None
+        self.affective_store = affective_store
+        self.last_affective_snapshot: AffectiveSnapshot | None = None
+        self.last_significant_event: SignificantAffectiveEvent | None = None
 
-    def reply(self, context: list[Message], target: ReplyTarget) -> str:
+    def reply(
+        self, context: list[Message], target: ReplyTarget, event: Event | None = None
+    ) -> str:
         self.last_diagnostics = None
-        start = perf_counter()
         planner_error = None
+        affective_error = None
+        affective_seconds = 0.0
+        self.last_affective_snapshot = None
+        self.last_significant_event = None
+        original_context = [dict(m) for m in context]
+        if self.affective_store is not None and event is not None:
+            tick = perf_counter()
+            try:
+                self.last_affective_snapshot = self.affective_store.snapshot(
+                    event.actor
+                    if event.type in {"conversation_message", "user_action"}
+                    else self.affective_store.primary_target,
+                    event.timestamp,
+                )
+                context = (
+                    original_context[:1]
+                    + [
+                        {
+                            "role": "system",
+                            "content": project_affective(self.last_affective_snapshot),
+                        }
+                    ]
+                    + original_context[1:]
+                )
+            except Exception as error:
+                affective_error = type(error).__name__
+                logging.getLogger(__name__).warning(
+                    "affective_read_failed: %s", affective_error
+                )
+            affective_seconds += perf_counter() - tick
         planner_messages: list[Message] = []
+        planner_start = perf_counter()
         try:
-            planner_messages = self.planner.build_messages(context, target)
-            guidance = self.planner.plan(planner_messages)
+            appraise = self.affective_store is not None and event is not None
+            planner_messages = self.planner.build_messages(
+                context, target, appraise=appraise
+            )
+            guidance = self.planner.plan(planner_messages, appraise=appraise)
         except Exception as error:
             # Explicit degraded turn, not a silent alternative planner or an API retry.
             planner_error = type(error).__name__
@@ -147,14 +200,51 @@ class NaturalReplyPipeline:
                 reply_reference="规划不可用；自行判断当前问题，必要时澄清，不默认追问续聊。",
             )
         planned = perf_counter()
+        if not planner_error and self.affective_store is not None and event is not None:
+            tick = perf_counter()
+            try:
+                appraisal = AffectiveAppraisal.model_validate(
+                    guidance.model_dump(include=set(AffectiveAppraisal.model_fields))
+                )
+                self.last_affective_snapshot = self.affective_store.apply(
+                    event, appraisal
+                )
+                self.last_significant_event = significant_event(event, appraisal)
+                context = (
+                    original_context[:1]
+                    + [
+                        {
+                            "role": "system",
+                            "content": project_affective(self.last_affective_snapshot),
+                        }
+                    ]
+                    + original_context[1:]
+                )
+            except Exception as error:
+                affective_error = type(error).__name__
+                logging.getLogger(__name__).warning(
+                    "affective_update_failed: %s", affective_error
+                )
+            affective_seconds += perf_counter() - tick
         usage = (
             getattr(self.planner.client, "last_usage", None)
             if not planner_error
             else None
         )
-        intent = guidance.expression_intent()
-        habits = () if planner_error else self.selector.select(intent, target.text)
-        style = None if planner_error else self.selector.temporary_style(intent)
+        selection_start = perf_counter()
+        intent = condition_intent(
+            guidance.expression_intent(), self.last_affective_snapshot
+        )
+        habits = (
+            ()
+            if planner_error
+            else self.selector.select(intent, target.text, self.last_affective_snapshot)
+        )
+        style = (
+            None
+            if planner_error
+            else self.selector.temporary_style(intent, self.last_affective_snapshot)
+        )
         reply_messages = self.replyer.build_messages(
             context, target, guidance, intent, habits, style
         )
@@ -169,14 +259,16 @@ class NaturalReplyPipeline:
                 tuple(h.id for h in habits),
                 style.id if style else None,
                 planner_error,
-                planned - start,
-                selected - planned,
+                planned - planner_start,
+                selected - selection_start,
                 perf_counter() - selected,
                 sum(len(m["content"]) for m in planner_messages),
                 sum(len(m["content"]) for m in reply_messages)
                 - sum(len(m["content"]) for m in context),
                 usage.prompt_tokens if usage else None,
                 usage.completion_tokens if usage else None,
+                affective_seconds,
+                affective_error,
             )
             logging.getLogger(__name__).debug(
                 "reply_pipeline: %s", asdict(self.last_diagnostics)
@@ -187,6 +279,8 @@ def create_reply_pipeline(
     resources: ExitStack,
     reply_client: CompletionClient,
     environment: Mapping[str, str] | None = None,
+    *,
+    affective_store: AffectiveStore | None = None,
 ) -> NaturalReplyPipeline | None:
     """All production entry points opt into natural by default; legacy is exact old path."""
     values = os.environ if environment is None else environment
@@ -199,7 +293,9 @@ def create_reply_pipeline(
         environment=values,
         max_retries=0,
         timeout=PLANNER_TIMEOUT,
-        max_output_tokens=PLANNER_MAX_TOKENS,
+        max_output_tokens=PLANNER_MAX_TOKENS if affective_store is not None else 768,
     )
     resources.callback(planner.close)
-    return NaturalReplyPipeline(ReplyPlanner(planner), Replyer(reply_client))
+    return NaturalReplyPipeline(
+        ReplyPlanner(planner), Replyer(reply_client), affective_store=affective_store
+    )

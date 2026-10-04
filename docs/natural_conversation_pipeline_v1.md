@@ -74,7 +74,9 @@ TemporaryStyle 有安静、轻快、随意、玩笑、利落五种轻度修饰�
   现有 Memory Extraction/Consolidation 自身的调用不变，不计入这两个数字。
   这里是逻辑调用次数；最终回复客户端既有的网络重试策略保持不变。
 - planner 复用当前 LLM endpoint/model（默认 deepseek-flash），单独客户端设置
-  max_output_tokens=768、timeout=8 秒、max_retries=0；不重复刷规划。
+  基础模式 max_output_tokens=768；当前正式入口启用 Appraisal 时为 1280，
+  详见 [Affective & Relationship State](affective_relationship_state_v1.md)。
+  timeout=8 秒、max_retries=0；不重复刷规划。
   HTTP timeout 是网络操作超时，不宣称严格总墙钟 8 秒 SLA。
 - 规划保留完整权威区块，超过 20,000 字符则显式降级；history 最多 12×800 字符，
   target 最多 6,000 字符，截断带说明，不推断省略内容。最终 Replyer 保留原完整上下文。

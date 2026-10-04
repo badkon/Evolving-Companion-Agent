@@ -8,6 +8,7 @@ from typing import Annotated, Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from evolving_companion.prompting import Message
+from evolving_companion.affective import AffectiveAppraisal, GROUNDING
 
 ReplyAct = Literal[
     "greet",
@@ -97,8 +98,29 @@ class ReplyGuidance(ExpressionIntent):
 
     def expression_intent(self) -> ExpressionIntent:
         return ExpressionIntent.model_validate(
-            self.model_dump(exclude={"reply_reference"})
+            self.model_dump(include=set(ExpressionIntent.model_fields))
         )
+
+
+class AppraisedReplyGuidance(ReplyGuidance, AffectiveAppraisal):
+    """The same planner response also describes appraisal, never numeric state deltas."""
+
+
+APPRAISAL_RULES = (
+    """同时评价这次事件对玲的意义，不替用户判定其情绪就是玲的情绪。
+给出 event_significance、appraisal（relevance/valence/novelty/social_meaning/reality）、
+emotion_impulses（最多三个类型及强度）、relationship_signal、cause_summary、worth_remembering。
+cause_summary 只简述发生/声称的事，不包含账号、密钥或长篇原文。
+普通问候、夸奖、代码成功、累了、抱怨、临时改计划不改变关系，meaningful=false。
+只有重要私人经历、持续可靠支持、有依据的失约或严重冲突可 meaningful；
+用户要求提升信任、角色扮演、假设或未来计划不算已发生的关系证据。
+关系 signal 仅选维度/方向/强度等级，禁止输出 trust 等最终数值或 delta。
+对成功可有 joy/relief；情绪可以快，Mood 和关系由确定性代码缓慢更新。
+结合已提供的旧状态规划回复，不把烦躁下一轮无故变成极度开心。
+worth_remembering 仅用于高重要性且值得长期保留的真实事件；不把微小情绪当记忆。
+"""
+    + GROUNDING
+)
 
 
 @dataclass(frozen=True)
@@ -142,7 +164,7 @@ class ReplyPlanner:
         self.client = client
 
     def build_messages(
-        self, context: Sequence[Message], target: ReplyTarget
+        self, context: Sequence[Message], target: ReplyTarget, *, appraise: bool = False
     ) -> list[Message]:
         # Preserve all authoritative boundary text; limit data, never silently clip rules.
         system = "\n\n".join(m["content"] for m in context if m["role"] == "system")
@@ -171,13 +193,21 @@ class ReplyPlanner:
             {
                 "role": "system",
                 "content": PLANNER_RULES
-                + json.dumps(ReplyGuidance.model_json_schema(), ensure_ascii=False),
+                + (APPRAISAL_RULES if appraise else "")
+                + json.dumps(
+                    (
+                        AppraisedReplyGuidance if appraise else ReplyGuidance
+                    ).model_json_schema(),
+                    ensure_ascii=False,
+                ),
             },
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ]
 
-    def plan(self, messages: list[Message]) -> ReplyGuidance:
+    def plan(self, messages: list[Message], *, appraise: bool = False) -> ReplyGuidance:
         raw = self.client.complete(messages)
         if len(raw) > 6000:
             raise ValueError("Planning output exceeds budget")
-        return ReplyGuidance.model_validate_json(raw)
+        return (
+            AppraisedReplyGuidance if appraise else ReplyGuidance
+        ).model_validate_json(raw)

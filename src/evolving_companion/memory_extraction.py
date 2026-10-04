@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from evolving_companion.storage import MemoryRecord, SQLiteStore
+from evolving_companion.affective import SignificantAffectiveEvent
 
 MemoryType = Literal["episodic", "semantic", "self", "relationship"]
 MemorySource = Literal["explicit", "observed", "inferred"]
@@ -121,16 +122,41 @@ class MemoryExtractor:
     def extract_memories(
         self, messages: Sequence[ArchiveChunkMessage | Mapping[str, str]]
     ) -> MemoryExtractionResult:
+        return self._extract(messages)
+
+    def extract_with_affect(
+        self,
+        messages: Sequence[ArchiveChunkMessage | Mapping[str, str]],
+        hint: SignificantAffectiveEvent,
+    ) -> MemoryExtractionResult:
+        return self._extract(messages, hint)
+
+    def _extract(
+        self,
+        messages: Sequence[ArchiveChunkMessage | Mapping[str, str]],
+        hint: SignificantAffectiveEvent | None = None,
+    ) -> MemoryExtractionResult:
         chunk = _validate_chunk(messages)
         input_content = json.dumps(
             [message.model_dump() for message in chunk], ensure_ascii=False
         )
-        response = self._llm_client.complete(
-            [
-                {"role": "system", "content": MEMORY_EXTRACTION_PROMPT},
-                {"role": "user", "content": input_content},
-            ]
-        )
+        request = [
+            {"role": "system", "content": MEMORY_EXTRACTION_PROMPT},
+            {"role": "user", "content": input_content},
+        ]
+        if hint is not None and str(hint.source_event_id) in {m.id for m in chunk}:
+            request.insert(
+                1,
+                {
+                    "role": "system",
+                    "content": "本轮有通过重要性 gate 的情绪线索："
+                    + ", ".join(hint.emotions)
+                    + "。这只是关注原始证据的提示，不是新证据或新的 memory source。"
+                    "只有下方 Archive 内容独立支持且确实值得长期记住时才保存；"
+                    "不要保存内部心情/关系数值，不得仅凭此提示制造亲历记忆。",
+                },
+            )
+        response = self._llm_client.complete(request)
         return MemoryExtractionResult.model_validate_json(response)
 
 

@@ -8,6 +8,12 @@
 
 ## 当前工程状态 — Runtime Configuration / Operations
 
+Affective & Relationship State v1 扩展既有 Planner，同时产生 Appraisal 与 Guidance。
+独立 SQLite 状态经确定性小步更新、lazy decay/recovery、每日绝对 cap，再投影给
+Selector/Replyer；不改 Seed、World 或 Memory schema。QQ 授权后传稳定假名 UUID target，
+关系/history 分离；无 ownership 的旧 Memory 仅对主要用户开放。
+详见 [Affective & Relationship State v1](affective_relationship_state_v1.md)。
+
 Natural Conversation Pipeline v1：正式 CLI / 共享 QQ-Core 工厂默认将原 PromptBuilder 上下文交给
 ReplyPlanner → ReplyGuidance → ExpressionIntent → ExpressionSelector → Replyer。表达习惯和风格
 独立于 Character Data，不修改 Memory/World。额外一次有预算的规划 LLM，最终归档、history 和

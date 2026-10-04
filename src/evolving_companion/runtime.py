@@ -6,6 +6,9 @@ import logging
 import os
 import signal
 from pathlib import Path
+from uuid import uuid5
+from evolving_companion.affective_store import AffectiveStore
+from evolving_companion.qq_adapter import relation_target_id
 
 from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.character_life import CharacterLifeService
@@ -50,11 +53,20 @@ def create_conversation(resources: ExitStack) -> Conversation:
     retriever = MemoryRetriever(store, embedding_provider)
     llm = LLMClient()
     resources.callback(llm.close)
+    allowed = os.environ.get("SI_QQ_ALLOWED_USER_IDS", "").split(",")[0].strip()
+    primary_target = (
+        relation_target_id(allowed)
+        if allowed
+        else uuid5(seed.identity.internal_id, "local-primary")
+    )
+    affective = AffectiveStore(
+        store.path, seed.identity.internal_id, primary_target, clock.now_utc()
+    )
     return Conversation(
         llm,
         CharacterProjector().project(seed),
         store,
-        reply_pipeline=create_reply_pipeline(resources, llm),
+        reply_pipeline=create_reply_pipeline(resources, llm, affective_store=affective),
         memory_recall_service=MemoryRecallService(
             retriever, MemoryReranker(provider=reranker_provider)
         ),

@@ -3,7 +3,10 @@
 from pathlib import Path
 from contextlib import ExitStack
 from typing import cast
-from uuid import UUID
+from uuid import UUID, uuid5
+import os
+from evolving_companion.affective_store import AffectiveStore
+from evolving_companion.qq_adapter import relation_target_id
 
 from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.character_projection import CharacterProjector
@@ -95,6 +98,15 @@ def _run(resources: ExitStack) -> None:
         )
         llm_client = LLMClient()
         resources.callback(llm_client.close)
+        allowed = os.environ.get("SI_QQ_ALLOWED_USER_IDS", "").split(",")[0].strip()
+        primary_target = (
+            relation_target_id(allowed)
+            if allowed
+            else uuid5(seed_data.identity.internal_id, "local-primary")
+        )
+        affective = AffectiveStore(
+            store.path, seed_data.identity.internal_id, primary_target, clock.now_utc()
+        )
         consolidation_service = MemoryConsolidationService(
             store, retriever, MemoryConsolidationJudge(llm_client)
         )
@@ -105,7 +117,9 @@ def _run(resources: ExitStack) -> None:
             llm_client,
             character_context,
             store,
-            reply_pipeline=create_reply_pipeline(resources, llm_client),
+            reply_pipeline=create_reply_pipeline(
+                resources, llm_client, affective_store=affective
+            ),
             memory_recall_service=recall_service,
             memory_formation_service=formation_service,
             character_state_service=state_service,

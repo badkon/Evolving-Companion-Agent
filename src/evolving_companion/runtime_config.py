@@ -86,6 +86,7 @@ def database_character_ids(path: Path) -> set[str]:
                 "character_state",
                 "character_runtime",
                 "character_life_context",
+                "affective_state",
             )
             if table in tables
             for row in connection.execute(f"SELECT character_id FROM {table}")
