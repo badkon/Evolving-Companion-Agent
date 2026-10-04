@@ -169,7 +169,7 @@ class NaturalReplyPipeline:
     ) -> None:
         self.planner = planner
         self.replyer = replyer
-        self.selector = selector or ExpressionSelector()
+        self.selector = None if simplified else selector or ExpressionSelector()
         self.last_diagnostics: ReplyDiagnostics | None = None
         self.affective_store = affective_store
         self.last_affective_snapshot: AffectiveSnapshot | None = None
@@ -179,6 +179,7 @@ class NaturalReplyPipeline:
         self.context_builder = RelevantContextBuilder() if simplified else None
         self.tiny_planner = TinyPlanner(planner.client) if simplified else None
         self.last_relevant_context: RelevantContext | None = None
+        self.last_tiny_plan: TinyPlan | None = None
 
     def reply(
         self,
@@ -198,6 +199,7 @@ class NaturalReplyPipeline:
         self.last_persona_relevance = PersonaRelevance()
         self.last_trait_candidates = ()
         self.last_relevant_context = None
+        self.last_tiny_plan = None
         if self.context_builder is not None and (
             state is None or state.target != target
         ):
@@ -334,6 +336,9 @@ class NaturalReplyPipeline:
         selection_start = perf_counter()
         if isinstance(guidance, TinyPlan):
             assert self.context_builder is not None and state is not None
+            self.last_tiny_plan = TinyPlan.model_validate(
+                guidance.model_dump(include=set(TinyPlan.model_fields))
+            )
             self.last_relevant_context = self.context_builder.build(
                 state, self.last_affective_snapshot
             )
@@ -343,6 +348,7 @@ class NaturalReplyPipeline:
                 self.last_relevant_context, guidance
             )
         else:
+            assert self.selector is not None
             intent = condition_intent(
                 guidance.expression_intent(), self.last_affective_snapshot
             )

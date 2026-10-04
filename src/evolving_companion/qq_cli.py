@@ -9,6 +9,7 @@ from evolving_companion.local_env import load_local_env
 from evolving_companion.runtime import create_conversation
 from evolving_companion.qq_adapter import QQPrivateChatAdapter, _identifier
 from evolving_companion.qq_transport import OneBotWebSocketTransport
+from evolving_companion.media_input import create_vision_input
 
 
 def main(*, load_environment: bool = True) -> int:
@@ -44,7 +45,10 @@ def _run(resources: ExitStack, *, load_environment: bool = True) -> int:
         return 78
     try:
         adapter = QQPrivateChatAdapter(
-            create_conversation(resources), allowed_user_ids=allowed, bot_user_id=bot_id
+            create_conversation(resources),
+            allowed_user_ids=allowed,
+            bot_user_id=bot_id,
+            vision_input=create_vision_input(resources),
         )
         transport = OneBotWebSocketTransport(
             adapter,

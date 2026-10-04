@@ -21,6 +21,7 @@ from evolving_companion.character_projection import (
 from evolving_companion.character_life import ProjectedLifeContext
 from evolving_companion.expression import ExpressionSelector
 from evolving_companion.observation import ObservationSnapshot
+from evolving_companion.mini_life import MiniLifeService
 from evolving_companion.prompting import Message, PromptBuilder
 from evolving_companion.reply_pipeline import NaturalReplyPipeline, Replyer
 from evolving_companion.reply_planning import (
@@ -35,6 +36,8 @@ from evolving_companion.simplified_conversation import (
 )
 from evolving_companion.storage import SQLiteStore
 from evolving_companion.time_model import CharacterTimeSnapshot
+from evolving_companion.world_time import WorldTimeService
+from zoneinfo import ZoneInfo
 
 
 @dataclass
@@ -79,7 +82,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--pipeline",
-        choices=("both", "natural_full", "natural_simplified"),
+        choices=("both", "natural", "natural_full", "natural_simplified"),
         default="both",
     )
     args = parser.parse_args()
@@ -91,10 +94,12 @@ def main() -> int:
             encoding="utf-8"
         )
     )
-    now = datetime(2026, 10, 4, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 10, 5, 12, tzinfo=timezone.utc)
+    local = now.astimezone(ZoneInfo(seed.timezone))
+    mini_life_service = MiniLifeService(seed)
     primary = uuid5(seed.identity.internal_id, "synthetic-primary")
     modes = (
-        ("natural_full", "natural_simplified")
+        ("natural", "natural_simplified")
         if args.pipeline == "both"
         else (args.pipeline,)
     )
@@ -102,6 +107,10 @@ def main() -> int:
     context_ms = []
     with TemporaryDirectory(prefix="si-simplified-ab-") as directory:
         for case in cases:
+            life = ProjectedLifeContext(
+                "student", "学生", "合成住宅", "合成学校", None, "合成客厅"
+            )
+            mini_life = mini_life_service.build(now, life)
             for mode in modes:
                 db = SQLiteStore(Path(directory) / f"{case['id']}-{mode}.db")
                 store = AffectiveStore(db.path, seed.identity.internal_id, primary, now)
@@ -140,19 +149,16 @@ def main() -> int:
                         ),
                     )
                 )
-                life = ProjectedLifeContext(
-                    "student", "学生", "合成住宅", "合成学校", None, "合成客厅"
-                )
                 observation = ObservationSnapshot(
                     character_id=seed.identity.internal_id,
                     observed_at=now,
                     location_entity_id=uuid5(primary, "synthetic-place"),
                     place_name="合成客厅",
                     status="available",
-                    day_period="afternoon",
+                    day_period=WorldTimeService(seed.timezone).snapshot(now).day_period,
                 )
                 time = CharacterTimeSnapshot(
-                    now, now, "UTC", now.date(), now.timetz(), None, None
+                    now, local, seed.timezone, local.date(), local.timetz(), None, None
                 )
                 state = ConversationState(
                     character,
@@ -162,6 +168,7 @@ def main() -> int:
                     time=time,
                     life=life,
                     observation=observation,
+                    mini_life=mini_life,
                 )
                 start = perf_counter()
                 selected = RelevantContextBuilder().build(state, before)
@@ -218,7 +225,9 @@ def main() -> int:
                 pipeline = NaturalReplyPipeline(
                     ReplyPlanner(planner),
                     Replyer(replyer),
-                    ExpressionSelector(rng=Random(1)),
+                    None
+                    if mode == "natural_simplified"
+                    else ExpressionSelector(rng=Random(1)),
                     store,
                     simplified=mode == "natural_simplified",
                 )
@@ -279,7 +288,7 @@ def main() -> int:
         assert all(
             simple[0] < full[0] and simple[1] < full[1]
             for full, simple in zip(
-                sizes["natural_full"], sizes["natural_simplified"], strict=True
+                sizes["natural"], sizes["natural_simplified"], strict=True
             )
         )
     print(

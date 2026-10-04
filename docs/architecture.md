@@ -36,6 +36,9 @@ Mini Life Context v0.1 只给 simplified 提供即时计算的 now/next/today：
 复用 Seed 的 internal UUID、时区、喜好和既有 Life 关联；固定规则集中在 `mini_life.py`。
 自由活动按 UUID/本地日期/时间块稳定选择，不调用模型、不写数据库或历史事件。
 这是虚拟世界粗安排，不执行位置迁移；显式 State/Observation 优先，不证明过去经历。
+每轮只派生一次 Mini Life；Relevant Context 只在相关询问/短接续中注入三段摘要。
+关系仅投影 stage、熟悉/自在/客套程度与 romantic=false；显式本地 inspector 可脱敏查看
+实际 Replyer 消息及四字段计划，不增加 Console 页面、状态表或自动日志。
 
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
@@ -49,6 +52,14 @@ A6.0：Memory → EmbeddingProvider → Semantic Retrieval → RerankerProvider 
 当前 A4 v0.1 已增加本地 SQLite 当前 Character State，使用 `identity.internal_id` UUID 作为 State 主键；A4.1 添加确定性 elapsed-time transition；A4.2 添加不持久化的显式 Character Event 及其 State Transition 映射。B1 增加统一可注入 UTC Clock，SQLite `character_runtime` 保存最后成功对话时间，Time Snapshot 转换到 Seed 指定的 Character timezone，并向 Prompt 投影本地日期、时间与离线时长。Conversation 的 State elapsed 与 Prompt 共用本轮快照时间。Archive / Memory 等历史存储时间戳仍由 storage 内部系统时钟写入，是当前保留的边界。详见 [A4 Character State / A4.1 State Transition](a4_character_state_v01.md)、[A4.2 Explicit Character Events](a4_2_character_events_v01.md) 与 [B1 Time Model](b1_time_model_v01.md)。当前没有 memory merge/summary；也没有 World/NPC 模拟或自主行为。完整 Character Store 和多设备服务仍属于架构方向，尚未实现。
 
 ## 1. 核心分层
+
+Vision v0.1：QQ structured image → 受限 HTTPS MediaFetcher → 外部 VisionProvider →
+只读 VisualObservation → simplified Relevant Context → 原 Tiny Planner / Replyer。
+Vision 无角色表达权，不修改 Seed、World 或 DB schema；图片文字作为不可信 user context，
+不作为 system 指令。单轮/短接续有界缓存按用户隔离；图片轮不自动形成 Memory。
+原图与下载 URL 不持久化，disabled / 失败 / 非 simplified 模式诚实降级。
+无新增依赖、本地视觉模型或表情发送，真实 API / QQ 尚待验收。
+边界及配置见 [Vision Input v0.1](vision_input_v0_1.md)。
 
 SI Console v0.1 将 Web Setup 重组为九个认证页面：总览、聊天、媒体空入口、角色、情绪与关系、只读记忆、模型、运行与日志、数据与系统。复用现有 Starlette / Jinja / 原生 JS；内部 WebSetupServer / WebSetupService 名称保留。ConsoleService 仅做呈现和 SQLite `mode=ro` 查询；运行控制直接委托创建 Console 的同一个 ManagerService，沿用 NativeProcessController。无新 Core 初始化或 Memory/World 语义。入口 fragment token 换取临时 HttpOnly / SameSite=Strict cookie，多页导航不携带 URL token；cookie 写请求校验同源 Origin。详见 [SI Console](si_console_v01.md)。用户已报告上一版 Linux 安装/配置/API 测试/Core 控制通过；本轮 Console 与真实 QQ 私聊仍待验收。
 

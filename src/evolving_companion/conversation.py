@@ -1,6 +1,8 @@
 """Coordinate one conversation turn while keeping history in memory."""
 
 from collections.abc import Mapping
+from collections import OrderedDict
+from datetime import datetime
 from functools import partial
 import logging
 from typing import Protocol
@@ -33,6 +35,12 @@ from evolving_companion.reply_planning import ReplyTarget
 from evolving_companion.affective import Event
 from evolving_companion.simplified_conversation import ConversationState
 from evolving_companion.mini_life import MiniLifeService
+from evolving_companion.vision import (
+    VisualInput,
+    VISUAL_TTL_SECONDS,
+    VISUAL_FOLLOWUP_TURNS,
+    MAX_IMAGES,
+)
 
 
 class TextCompletionClient(Protocol):
@@ -119,20 +127,48 @@ class Conversation:
         self._target_sessions = {
             self._relationship_target: (self.conversation_id, self._history)
         }
+        self._recent_visual: OrderedDict[
+            UUID | None, tuple[datetime, tuple[VisualInput, ...], int]
+        ] = OrderedDict()
 
-    def send_for(self, user_message: str, target_id: UUID) -> str:
+    @property
+    def supports_visual_input(self) -> bool:
+        return (
+            self._reply_pipeline is not None
+            and self._reply_pipeline.context_builder is not None
+        )
+
+    def send_visual_for(
+        self, user_message: str, target_id: UUID, observations: tuple[VisualInput, ...]
+    ) -> str:
+        if not self.supports_visual_input:
+            user_message += "\n[当前模式未读取图片内容]"
+        return self.send_for(user_message, target_id, visual_observations=observations)
+
+    def send_for(
+        self,
+        user_message: str,
+        target_id: UUID,
+        *,
+        visual_observations: tuple[VisualInput, ...] = (),
+    ) -> str:
         """Transport-validated person key; separate history, shared Character affect."""
         if not isinstance(target_id, UUID):
             raise TypeError("Relationship target must be a UUID")
         if self._reply_pipeline is None or self._reply_pipeline.affective_store is None:
-            return self.send(user_message)
+            previous_target = self._relationship_target
+            self._relationship_target = target_id
+            try:
+                return self.send(user_message, visual_observations=visual_observations)
+            finally:
+                self._relationship_target = previous_target
         previous = self._relationship_target, self.conversation_id, self._history
         self._relationship_target = target_id
         self.conversation_id, self._history = self._target_sessions.setdefault(
             target_id, (str(uuid4()), [])
         )
         try:
-            return self.send(user_message)
+            return self.send(user_message, visual_observations=visual_observations)
         finally:
             self._relationship_target, self.conversation_id, self._history = previous
 
@@ -161,7 +197,9 @@ class Conversation:
         """Developer-only exception type; no cached observation or failure text."""
         return self._last_observation_error
 
-    def send(self, user_message: str) -> str:
+    def send(
+        self, user_message: str, *, visual_observations: tuple[VisualInput, ...] = ()
+    ) -> str:
         # Existing Memory has no user ownership key. Do not expose or mix it across
         # newly separated relation targets; keep the primary user's path unchanged.
         memory_allowed = (
@@ -177,6 +215,34 @@ class Conversation:
         )
         character_state = None
         now_utc = self._clock.now_utc()
+        visuals = visual_observations[:MAX_IMAGES] if self.supports_visual_input else ()
+        visual_followup = False
+        cached = self._recent_visual.pop(self._relationship_target, None)
+        if visuals:
+            self._recent_visual[self._relationship_target] = (
+                now_utc,
+                visuals,
+                VISUAL_FOLLOWUP_TURNS,
+            )
+            if len(self._recent_visual) > 32:
+                self._recent_visual.popitem(last=False)
+        elif cached is not None:
+            at, previous_visuals, turns_left = cached
+            age = (now_utc - at).total_seconds()
+            if 0 <= age <= VISUAL_TTL_SECONDS and turns_left > 0:
+                if user_message.strip(" ？?。！!") in {
+                    "就是这个",
+                    "你看这个",
+                    "好笑吧",
+                    "这个怎么样",
+                }:
+                    visuals, visual_followup = previous_visuals, True
+                if turns_left > 1:
+                    self._recent_visual[self._relationship_target] = (
+                        at,
+                        previous_visuals,
+                        turns_left - 1,
+                    )
         if self._state_transition_service is not None:
             # character_id is validated as the stable identity.internal_id UUID.
             assert self._character_id is not None
@@ -270,6 +336,8 @@ class Conversation:
                     self._mini_life_service.build(now_utc, life_context)
                     if self._mini_life_service is not None
                     else None,
+                    visuals,
+                    visual_followup,
                 )
                 if self._reply_pipeline.context_builder is not None
                 else None,
@@ -295,7 +363,13 @@ class Conversation:
                 # Metadata failure must not invalidate an archived reply or history.
                 self._last_interaction_error = type(error).__name__
         self._last_memory_formation_result = None
-        if self._memory_formation_service is not None and memory_allowed:
+        # Media observations are transient context, not independent Memory evidence.
+        # Ordinary subsequent text turns retain the existing formation path.
+        if (
+            self._memory_formation_service is not None
+            and memory_allowed
+            and not (visual_observations or visuals)
+        ):
             try:
                 formation = self._memory_formation_service.process_turn
                 hint = (

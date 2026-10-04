@@ -1,0 +1,10 @@
+[
+  {"id":"tired_cat","media_type":"sticker","summary":"一只趴在桌上的疲惫猫","visible_text":"不想上班","subjects":["猫"],"scene":"桌边","emotion":"tired","intent":"complaining","is_sticker":true,"humor":"mild","confidence":0.91},
+  {"id":"angry","media_type":"sticker","summary":"皱眉的卡通脸","visible_text":null,"subjects":["卡通脸"],"scene":null,"emotion":"annoyed","intent":"reaction","is_sticker":true,"humor":"none","confidence":0.86},
+  {"id":"celebrate","media_type":"sticker","summary":"举手庆祝的卡通人物和彩纸","visible_text":"好耶","subjects":["卡通人物","彩纸"],"scene":null,"emotion":"happy","intent":"celebrating","is_sticker":true,"humor":"mild","confidence":0.9},
+  {"id":"speechless","media_type":"sticker","summary":"面无表情的卡通人物","visible_text":"无语","subjects":["卡通人物"],"scene":null,"emotion":"neutral","intent":"reaction","is_sticker":true,"humor":"mild","confidence":0.88},
+  {"id":"refuse","media_type":"sticker","summary":"摆手的卡通人物","visible_text":"不要","subjects":["卡通人物"],"scene":null,"emotion":"neutral","intent":"refusing","is_sticker":true,"humor":"none","confidence":0.94},
+  {"id":"tease","media_type":"sticker","summary":"偷笑的卡通人物","visible_text":null,"subjects":["卡通人物"],"scene":null,"emotion":"happy","intent":"teasing","is_sticker":true,"humor":"mild","confidence":0.78},
+  {"id":"text_meme","media_type":"sticker","summary":"白底大字的交流图片","visible_text":"今天也要摸鱼","subjects":["文字"],"scene":null,"emotion":"neutral","intent":"reaction","is_sticker":true,"humor":"mild","confidence":0.9},
+  {"id":"photo","media_type":"image","summary":"有树和长椅的安静街道","visible_text":null,"subjects":["树","长椅"],"scene":"街道","emotion":"neutral","intent":"unknown","is_sticker":false,"humor":"none","confidence":0.95}
+]

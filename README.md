@@ -17,9 +17,16 @@ Relevant Context → 四字段 Tiny Planner → Replyer，旁路表达习惯与�
 默认 `natural` 保持完整管线，`natural_full` 是其别名，`legacy` 兼容原单次回复路径。
 离线 A/B：`python scripts/run_simplified_conversation_smoke.py --pipeline both`。
 简化模式另提供 Mini Life Context v0.1：按 Seed、时区和固定时间块计算 now/next/today，
-不写生活历史或数据库；离线检查：`python scripts/run_mini_life_smoke.py`。
+仅在相关轮次注入紧凑摘要，不写生活历史或数据库；离线检查：`python scripts/run_mini_life_smoke.py`。
+53 个离线合成场景覆盖生活相关/无关、关系/affect、Memory 和 Grounding；真实 QQ 自然度仍待 A/B 验收。
 
 ## 快速开始（Ubuntu 源码部署）
+
+[Vision Input & Sticker Understanding v0.1](docs/vision_input_v0_1.md) 为 QQ 的
+`natural_simplified` 增加外部 API 视觉观察：普通图片、截图和静态表情图进入原 Tiny Planner / Replyer。
+默认关闭，需在现有 env 配置 Vision provider/model/key；最多三图、每图 8 MiB，仅内存处理。
+不保存原图、不自动形成图片 Memory、不发送表情包；完整 `natural` 保持安全降级。
+离线端到端检查：`python scripts/run_vision_input_smoke.py`。真实 QQ / Vision 模型仍待验收。
 
 默认自然回复已接入 [Affective & Relationship State v1](docs/affective_relationship_state_v1.md)：
 同一次 Planner 完成 Appraisal，独立持久化 Emotion / Mood / 按用户关系；新状态影响表达。
