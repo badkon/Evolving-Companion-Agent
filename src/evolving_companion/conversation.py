@@ -26,6 +26,8 @@ from evolving_companion.storage import SQLiteStore
 from evolving_companion.clock import Clock, SystemClock
 from evolving_companion.time_model import CharacterTimeService
 from evolving_companion.world import WorldEntityService
+from evolving_companion.reply_pipeline import NaturalReplyPipeline
+from evolving_companion.reply_planning import ReplyTarget
 
 
 class TextCompletionClient(Protocol):
@@ -51,6 +53,7 @@ class Conversation:
         clock: Clock | None = None,
         character_life_service: CharacterLifeService | None = None,
         observation_service: ObservationContextPort | None = None,
+        reply_pipeline: NaturalReplyPipeline | None = None,
     ) -> None:
         if character_state_service is not None and character_id is None:
             raise ValueError(
@@ -73,6 +76,7 @@ class Conversation:
         if character_id is not None and not isinstance(character_id, UUID):
             raise TypeError("character_id must be identity.internal_id (UUID)")
         self._llm_client = llm_client
+        self._reply_pipeline = reply_pipeline
         self._clock = clock or SystemClock()
         self._prompt_builder = PromptBuilder(character_context)
         self._archive_store = archive_store
@@ -188,7 +192,11 @@ class Conversation:
             life_context,
             observation,
         )
-        reply = self._llm_client.complete(messages)
+        reply = (
+            self._reply_pipeline.reply(messages, ReplyTarget(user_message))
+            if self._reply_pipeline is not None
+            else self._llm_client.complete(messages)
+        )
         assistant_archive_id = self._archive_store.append_archive_message(
             self.conversation_id, "assistant", reply
         )

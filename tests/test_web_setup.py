@@ -315,7 +315,13 @@ def test_web_save_manager_fresh_start_existing_runtime_and_qq_reply(
     import sqlite3
     import sys
     from contextlib import closing
-    from evolving_companion import runtime, runtime_config, server, qq_transport
+    from evolving_companion import (
+        runtime,
+        runtime_config,
+        server,
+        qq_transport,
+        reply_pipeline,
+    )
     from evolving_companion.manager_services import ManagerService
     from evolving_companion.runtime_control import RuntimeStatus
 
@@ -323,12 +329,31 @@ def test_web_save_manager_fresh_start_existing_runtime_and_qq_reply(
     initialized = []
 
     class FakeLLM:
+        def __init__(self, **kwargs):
+            pass
+
+        def close(self):
+            pass
+
         def complete(self, messages):
+            if any("你是回复规划组件" in m["content"] for m in messages):
+                return json.dumps(
+                    {
+                        "focus": "招呼",
+                        "reply_act": "greet",
+                        "scene": "greeting",
+                        "tone": "casual",
+                        "prefer": ["brief"],
+                        "avoid": ["curiosity"],
+                        "reply_reference": "自然回应招呼，不强行续聊。",
+                    }
+                )
             if "Memory Extraction" in messages[0]["content"]:
                 return '{"candidates":[]}'
             return "你好，测试收到。"
 
     monkeypatch.setattr(runtime, "LLMClient", FakeLLM)
+    monkeypatch.setattr(reply_pipeline, "LLMClient", FakeLLM)
     monkeypatch.setattr(
         runtime, "__file__", str(service.project / "src/evolving_companion/runtime.py")
     )

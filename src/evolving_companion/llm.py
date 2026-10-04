@@ -1,6 +1,7 @@
 """Thin adapter for the DeepSeek OpenAI-compatible chat completions API."""
 
 import os
+from dataclasses import dataclass
 from collections.abc import Mapping, Sequence
 from urllib.parse import urlsplit
 
@@ -9,6 +10,12 @@ from openai import OpenAI, DefaultHttpxClient
 Message = Mapping[str, str]
 MODEL = "deepseek-flash"
 BASE_URL = "https://api.deepseek.com"
+
+
+@dataclass(frozen=True)
+class CompletionUsage:
+    prompt_tokens: int
+    completion_tokens: int
 
 
 def llm_settings(values: Mapping[str, str]) -> tuple[str, str]:
@@ -51,6 +58,7 @@ class LLMClient:
         endpoint, self.model = llm_settings(values)
         options = {} if timeout is None else {"timeout": timeout}
         self.max_output_tokens = max_output_tokens
+        self.last_usage: CompletionUsage | None = None
         self._client = OpenAI(
             api_key=resolved_api_key,
             base_url=endpoint,
@@ -60,6 +68,7 @@ class LLMClient:
         )
 
     def complete(self, messages: Sequence[Message]) -> str:
+        self.last_usage = None
         options = (
             {}
             if self.max_output_tokens is None
@@ -70,6 +79,11 @@ class LLMClient:
             messages=[dict(message) for message in messages],
             **options,
         )
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            self.last_usage = CompletionUsage(
+                usage.prompt_tokens, usage.completion_tokens
+            )
         content = response.choices[0].message.content
         if content is None:
             raise RuntimeError("DeepSeek 返回了空回复。")

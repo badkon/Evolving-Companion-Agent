@@ -14,6 +14,7 @@ from evolving_companion.character_state import CharacterStateService
 from evolving_companion.clock import SystemClock
 from evolving_companion.conversation import Conversation
 from evolving_companion.llm import LLMClient
+from evolving_companion.reply_pipeline import create_reply_pipeline
 from evolving_companion.memory_consolidation import (
     MemoryConsolidationJudge,
     MemoryConsolidationService,
@@ -48,10 +49,12 @@ def create_conversation(resources: ExitStack) -> Conversation:
     embedding_provider, reranker_provider = create_memory_providers(resources)
     retriever = MemoryRetriever(store, embedding_provider)
     llm = LLMClient()
+    resources.callback(llm.close)
     return Conversation(
         llm,
         CharacterProjector().project(seed),
         store,
+        reply_pipeline=create_reply_pipeline(resources, llm),
         memory_recall_service=MemoryRecallService(
             retriever, MemoryReranker(provider=reranker_provider)
         ),

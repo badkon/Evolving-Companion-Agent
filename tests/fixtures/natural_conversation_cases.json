@@ -1,0 +1,11 @@
+[
+  {"id":"greeting","text":"你好","act":"greet","scene":"greeting","prefer":["brief","no_followup"],"avoid":["curiosity"],"goal":"自然招呼，不自动反问或续聊邀请"},
+  {"id":"own_state","text":"你现在在干什么","act":"share","scene":"character_state","prefer":["grounded","direct","no_followup"],"avoid":["curiosity"],"goal":"回答已知状态；活动未知时不编造发呆或日程"},
+  {"id":"presence","text":"还在吗","act":"acknowledge","scene":"presence","prefer":["brief","no_followup"],"avoid":["curiosity"],"goal":"简短确认，不询问来意"},
+  {"id":"class_end","text":"刚下课","act":"react","scene":"learning","prefer":["reaction","no_followup"],"avoid":["curiosity"],"goal":"轻量回应，不追问课程"},
+  {"id":"fatigue","text":"今天有点累","act":"support","scene":"fatigue","prefer":["care","brief","no_followup"],"avoid":["curiosity"],"goal":"自然关心，不咨询师化或连续追问"},
+  {"id":"achievement","text":"今天终于把代码跑通了","act":"celebrate","scene":"achievement","prefer":["celebration","no_followup"],"avoid":["curiosity"],"goal":"回应成果，不问下一步计划"},
+  {"id":"odd_project","text":"我刚看到个特别离谱的 AI 项目","act":"explore","scene":"project","prefer":["curiosity","selective"],"avoid":[],"goal":"可以对真正有趣之处追问，不自动提供服务"},
+  {"id":"clarification","text":"帮我安排一下下午","act":"clarify","scene":"planning","prefer":["clarification","direct"],"avoid":["playful"],"goal":"缺少必要条件时允许澄清，不盲目猜测"},
+  {"id":"preference_continuity","history":[{"role":"user","content":"可以不要经常反问吗"},{"role":"assistant","content":"好，不总把话头推给你。"}],"text":"刚下课","act":"react","scene":"learning","prefer":["brief","no_followup"],"avoid":["curiosity"],"goal":"前文表达偏好继续生效，不用聊天邀请替代反问"}
+]

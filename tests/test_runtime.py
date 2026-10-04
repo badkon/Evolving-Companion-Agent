@@ -91,13 +91,15 @@ def test_core_only_owns_resources_and_never_initializes_transport(
     assert closed == [True]
 
 
+@pytest.mark.parametrize("pipeline_mode", ["natural", "legacy"])
 def test_shared_core_initializes_temporary_database_without_api_calls(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pipeline_mode: str
 ) -> None:
     assert qq_cli.create_conversation is runtime.create_conversation
     database = tmp_path / "core.db"
     monkeypatch.setenv("SI_RUNTIME_DB", str(database))
     monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-test-key")
+    monkeypatch.setenv("SI_REPLY_PIPELINE", pipeline_mode)
     monkeypatch.setenv("SI_MEMORY_EMBEDDING_PROVIDER", "api")
     monkeypatch.setenv("SI_MEMORY_RERANKER_PROVIDER", "api")
     for name, value in {
@@ -123,6 +125,7 @@ def test_shared_core_initializes_temporary_database_without_api_calls(
     with ExitStack() as resources:
         core = runtime.create_conversation(resources)
         assert core.history == ()
+        assert (core._reply_pipeline is not None) == (pipeline_mode == "natural")
     with closing(sqlite3.connect(database)) as connection:
         assert connection.execute("PRAGMA quick_check").fetchone() == ("ok",)
         assert connection.execute(

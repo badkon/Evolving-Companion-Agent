@@ -2,6 +2,11 @@
 
 一个面向长期陪伴的自主 Agent 项目，长期探索持续身份、长期记忆、人格演化、关系发展、虚拟生活、世界感知与未来实体迁移。
 
+正式 CLI / QQ 默认使用 [Natural Conversation Pipeline v1](docs/natural_conversation_pipeline_v1.md)：
+结构化回复规划、表达意图、24 条表达习惯的上下文选择、基础/临时风格与独立 Replyer。
+`SI_REPLY_PIPELINE=legacy` 可切回原路径，未配置时为 `natural`。每轮回复侧增加一次有预算的规划调用；
+Memory/Character/World 边界不变。用户已报告原 QQ 链路打通，新管线的真实 QQ 自然度仍待验收。
+
 ## 快速开始（Ubuntu 源码部署）
 
 先 clone 本仓库；在已安装 Python 3.12 和 `python3.12-venv` 的环境，以同一个普通用户执行：

@@ -29,6 +29,7 @@ from evolving_companion.character_events import (
 from evolving_companion.character_state import CharacterState
 from evolving_companion.conversation import Conversation
 from evolving_companion.llm import LLMClient
+from evolving_companion.reply_pipeline import create_reply_pipeline
 from evolving_companion.local_env import load_local_env
 from evolving_companion.memory_consolidation import (
     MemoryConsolidationJudge,
@@ -93,6 +94,7 @@ def _run(resources: ExitStack) -> None:
             retriever, MemoryReranker(provider=reranker_provider)
         )
         llm_client = LLMClient()
+        resources.callback(llm_client.close)
         consolidation_service = MemoryConsolidationService(
             store, retriever, MemoryConsolidationJudge(llm_client)
         )
@@ -103,6 +105,7 @@ def _run(resources: ExitStack) -> None:
             llm_client,
             character_context,
             store,
+            reply_pipeline=create_reply_pipeline(resources, llm_client),
             memory_recall_service=recall_service,
             memory_formation_service=formation_service,
             character_state_service=state_service,

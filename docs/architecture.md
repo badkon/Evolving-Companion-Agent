@@ -8,6 +8,12 @@
 
 ## 当前工程状态 — Runtime Configuration / Operations
 
+Natural Conversation Pipeline v1：正式 CLI / 共享 QQ-Core 工厂默认将原 PromptBuilder 上下文交给
+ReplyPlanner → ReplyGuidance → ExpressionIntent → ExpressionSelector → Replyer。表达习惯和风格
+独立于 Character Data，不修改 Memory/World。额外一次有预算的规划 LLM，最终归档、history 和
+formation 完成边界不变；`SI_REPLY_PIPELINE=legacy` 保留原单次生成路径。
+具体机制、失败降级、成本和 MaiBot 功能映射见 [Natural Conversation Pipeline v1](natural_conversation_pipeline_v1.md)。
+
 项目使用 Python >= 3.12、`src` layout 和 `evolving_companion` 包，通过 setuptools 与标准 pip 安装。
 A1 提供 CLI 和多轮内存会话；LLM 层通过 OpenAI Python SDK 调用 DeepSeek 的 OpenAI-compatible API。
 A2 v0.1 将初始 Seed Character Data 独立存放在 `data/characters/si_001.yaml`，数据路径为 YAML → Pydantic validation → Character Projection → PromptBuilder → LLM。
