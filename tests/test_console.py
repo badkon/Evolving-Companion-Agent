@@ -2,16 +2,25 @@
 
 from contextlib import closing
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from html.parser import HTMLParser
 from pathlib import Path
 import shutil
 import sqlite3
+import json
+import subprocess
+from uuid import UUID, uuid4
 
 import pytest
 from starlette.testclient import TestClient
 
 from evolving_companion.config_env import OperationResult
+from evolving_companion.affective import EmotionEvent, EmotionType, Mood
+from evolving_companion.affective_console import AffectiveConsoleService
+from evolving_companion.affective_store import AffectiveStore
+from evolving_companion.character_data import load_character_seed_data
+from evolving_companion.clock import FixedClock
 from evolving_companion.console_services import ConsoleService
 from evolving_companion.manager_services import ManagerService, ManagerStatus
 from evolving_companion.storage import SCHEMA
@@ -288,3 +297,335 @@ def test_overview_never_claims_chat_ready(setup, monkeypatch):
         assert "未验证" in data["qq"]
         assert data["memory_count"] == "暂无数据"
         assert "QQ 已登录" not in str(data)
+
+
+@pytest.fixture
+def affective_setup(setup, monkeypatch):
+    from evolving_companion import affective_console
+
+    service, manager = setup
+    now = datetime(2026, 10, 4, 12, tzinfo=timezone.utc)
+    clock = FixedClock(now)
+    monkeypatch.setattr(affective_console, "SystemClock", lambda: clock)
+    character = load_character_seed_data(
+        service.project / "data/characters/si_001.yaml"
+    ).identity.internal_id
+    target = uuid4()
+    database = manager.paths().database
+    database.parent.mkdir()
+    AffectiveStore(database, character, target, now)
+    reader = AffectiveConsoleService(database, character, clock)
+    return service, manager, reader, clock, target
+
+
+def write_console_emotion(
+    reader: AffectiveConsoleService,
+    target: UUID,
+    now: datetime,
+    *,
+    kind: EmotionType = "curiosity",
+    cause: str = "合成原因",
+) -> EmotionEvent:
+    emotion = EmotionEvent(
+        type=kind,
+        intensity=0.6,
+        target=target,
+        cause_summary=cause,
+        created_at=now,
+        decay_until=now + timedelta(hours=2),
+        source_event_id=uuid4(),
+    )
+    with closing(sqlite3.connect(reader.database)) as db, db:
+        db.execute(
+            "INSERT INTO emotion_events VALUES(?,?,?,?,?)",
+            (
+                reader.character_id,
+                str(emotion.source_event_id),
+                emotion.type,
+                emotion.decay_until.isoformat(),
+                emotion.model_dump_json(),
+            ),
+        )
+    return emotion
+
+
+def test_affective_relationship_mood_and_emotion_read_without_writes(affective_setup):
+    service, _, reader, clock, target = affective_setup
+    write_console_emotion(reader, target, clock.now_utc())
+    clock.advance(minutes=30)
+    before = sha256(reader.database.read_bytes()).digest()
+    with web_client(service) as web:
+        data = web.get("/api/affective").json()
+        assert data["status"] == "ready"
+        relationship = data["relationship"]
+        assert relationship["stage_label"] == "熟人"
+        assert relationship["romantic"] is False
+        assert relationship["boundary"] == "关系边界：非恋爱关系"
+        assert [d["percent"] for d in relationship["dimensions"]] == [
+            75,
+            65,
+            65,
+            80,
+            15,
+        ]
+        assert data["mood"]["dimensions"][0]["value"] == 0.15
+        emotion = data["emotions"][0]
+        assert emotion["label"] == "好奇" and emotion["active"]
+        assert emotion["intensity"] == pytest.approx(0.45)
+        assert emotion["initial_intensity"] == 0.6
+        assert emotion["cause_summary"] == "合成原因"
+        assert emotion["created_at"].endswith("+00:00")
+        assert data["debug"]["primary_target"] == str(target)
+        assert web.get("/api/affective").json() == data
+        overview = web.get("/api/overview").json()
+        assert overview["affective"] == data
+        for path in ("/", "/affective"):
+            html = web.get(path).text
+            assert "当前状态" in html
+            assert str(target) not in html
+            assert Markup(html).avatars == 1
+        assert 'id="affective-summary"' in web.get("/").text
+        page = web.get("/affective").text
+        assert 'id="refresh-affective"' in page
+        assert "近期情绪" in page and "调试信息（只读）" in page
+        assert "data-action=" not in page
+    assert sha256(reader.database.read_bytes()).digest() == before
+    assert list(reader.database.parent.iterdir()) == [reader.database]
+
+
+def test_mood_signed_values_normalized_and_recovered_only_in_memory(affective_setup):
+    _, _, reader, clock, _ = affective_setup
+    mood = Mood(
+        valence=-1,
+        energy=0,
+        calmness=1,
+        sociability=-0.5,
+        updated_at=clock.now_utc(),
+    )
+    with closing(sqlite3.connect(reader.database)) as db, db:
+        db.execute(
+            "UPDATE affective_state SET payload=? WHERE character_id=?",
+            (mood.model_dump_json(), reader.character_id),
+        )
+    before = sha256(reader.database.read_bytes()).digest()
+    data = reader.read()
+    assert [d["position"] for d in data["mood"]["dimensions"]] == pytest.approx(
+        [0, 50, 100, 25]
+    )
+    assert [d["value"] for d in data["mood"]["dimensions"]] == pytest.approx(
+        [-1, 0, 1, -0.5]
+    )
+    assert "整体偏低落" in data["mood"]["summary"]
+    clock.advance(hours=6)
+    recovered = reader.read()["mood"]
+    assert recovered["dimensions"][0]["value"] == pytest.approx(-0.425)
+    assert recovered["updated_at"] == mood.updated_at.isoformat()
+    assert sha256(reader.database.read_bytes()).digest() == before
+
+
+def test_recent_emotion_limit_active_ranking_and_empty_active_state(affective_setup):
+    _, _, reader, clock, target = affective_setup
+    now = clock.now_utc()
+    for index in range(15):
+        write_console_emotion(
+            reader,
+            target,
+            now - timedelta(minutes=index),
+            kind="joy" if index % 2 else "curiosity",
+        )
+    data = reader.read()
+    assert len(data["emotions"]) == 12
+    assert len(data["active_emotions"]) == 2
+    assert data["active_count"] == 15
+    assert data["active_emotions"][0]["label"] == "好奇"
+    clock.advance(hours=3)
+    expired = reader.read()
+    assert expired["active_emotions"] == [] and expired["active_count"] == 0
+    assert len(expired["emotions"]) == 12
+    assert all(not e["active"] and e["intensity"] == 0 for e in expired["emotions"])
+
+
+def test_missing_relationship_mood_and_primary_do_not_bootstrap(affective_setup):
+    _, _, reader, _, _ = affective_setup
+    with closing(sqlite3.connect(reader.database)) as db, db:
+        db.execute("DELETE FROM relationship_states")
+        db.execute("DELETE FROM affective_state")
+    before = sha256(reader.database.read_bytes()).digest()
+    data = reader.read()
+    assert data["relationship"] is None and data["mood"] is None
+    assert data["emotions"] == []
+    assert sha256(reader.database.read_bytes()).digest() == before
+    with closing(sqlite3.connect(reader.database)) as db, db:
+        db.execute("DELETE FROM affective_primary_target")
+    assert reader.read()["debug"]["primary_target"] == "尚未绑定"
+
+
+@pytest.mark.parametrize("database_kind", ["missing", "empty", "legacy", "corrupt"])
+def test_affective_empty_or_bad_database_keeps_pages_available(setup, database_kind):
+    service, manager = setup
+    path = manager.paths().database
+    if database_kind != "missing":
+        path.parent.mkdir()
+        if database_kind == "corrupt":
+            path.write_bytes(b"not a database")
+        else:
+            with closing(sqlite3.connect(path)) as db:
+                if database_kind == "legacy":
+                    db.executescript(SCHEMA)
+    before = path.read_bytes() if path.is_file() else None
+    with web_client(service) as web:
+        for page in ("/", "/affective"):
+            assert web.get(page).status_code == 200
+        data = web.get("/api/affective").json()
+        assert data["status"] == ("error" if database_kind == "corrupt" else "empty")
+        assert data["relationship"] is None and data["mood"] is None
+        if database_kind == "corrupt":
+            assert "状态读取失败" in data["message"]
+        else:
+            assert "尚未初始化" in data["message"]
+    assert (path.read_bytes() if path.is_file() else None) == before
+
+
+def test_primary_binding_is_not_inferred_from_allowlist_and_other_character_isolated(
+    affective_setup,
+):
+    service, _, reader, clock, target = affective_setup
+    service.env.path.write_text("SI_QQ_ALLOWED_USER_IDS=200,100\n", encoding="utf-8")
+    AffectiveStore(reader.database, uuid4(), uuid4(), clock.now_utc())
+    with web_client(service) as web:
+        data = web.get("/api/affective").json()
+        assert data["debug"]["primary_target"] == str(target)
+        assert data["relationship"]["stage"] == "familiar"
+
+
+def test_affective_read_failure_safe_logs_and_secret_redaction(
+    affective_setup,
+    monkeypatch,
+    caplog,
+):
+    service, _, reader, clock, target = affective_setup
+    service.env.path.write_text(
+        "DEEPSEEK_API_KEY=fake-affective-secret\n", encoding="utf-8"
+    )
+    write_console_emotion(
+        reader,
+        target,
+        clock.now_utc(),
+        cause="<script>alert(1)</script> fake-affective-secret " + "合成摘要" * 30,
+    )
+    with web_client(service) as web:
+        response = web.get("/api/affective")
+        assert "fake-affective-secret" not in response.text
+        assert "<script>" in response.json()["emotions"][0]["cause_summary"]
+        assert response.headers["cache-control"] == "no-store"
+        assert web.get("/api/overview").json()["affective"]["status"] == "ready"
+
+        def fail(_):
+            raise PermissionError("private traceback fake-affective-secret")
+
+        monkeypatch.setattr(AffectiveConsoleService, "read", fail)
+        failed = web.get("/api/affective")
+        assert failed.status_code == 200 and failed.json()["status"] == "error"
+        assert "fake-affective-secret" not in failed.text + caplog.text
+        assert "private traceback" not in failed.text + caplog.text
+        assert "PermissionError" in caplog.text
+        assert web.get("/api/overview").json()["affective"]["status"] == "error"
+
+
+def test_affective_api_authenticated_get_only_and_database_connection_readonly(
+    affective_setup,
+    monkeypatch,
+):
+    service, _, reader, _, _ = affective_setup
+    original = sqlite3.connect
+    seen = []
+
+    def connect(address, **kwargs):
+        assert address.endswith("?mode=ro") and kwargs["uri"]
+        db = original(address, **kwargs)
+        db.set_trace_callback(seen.append)
+        return db
+
+    monkeypatch.setattr(sqlite3, "connect", connect)
+    before = sha256(reader.database.read_bytes()).digest()
+    with web_client(service) as web:
+        assert web.get("/api/affective").status_code == 200
+        assert (
+            web.get("/api/affective", headers={"Authorization": "bad"}).status_code
+            == 401
+        )
+        assert (
+            web.get(
+                "/api/affective", headers={"Origin": "https://evil.invalid"}
+            ).status_code
+            == 403
+        )
+        for method in ("POST", "PUT", "PATCH", "DELETE"):
+            response = web.request(method, "/api/affective", json={"trust": 1})
+            assert response.status_code == 405
+        assert "PRAGMA query_only = ON" in seen
+        assert all(sql.split()[0] in {"SELECT", "PRAGMA", "BEGIN"} for sql in seen)
+    assert sha256(reader.database.read_bytes()).digest() == before
+
+
+def test_affective_browser_renderer_signed_bars_safe_text_and_empty_states(
+    affective_setup,
+):
+    """Exercise the actual native JS renderer with a small DOM, no browser/network."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is only used for the optional native JS renderer check")
+    _, _, reader, clock, target = affective_setup
+    write_console_emotion(
+        reader, target, clock.now_utc(), cause="<script>unsafe</script>" + "长摘要" * 40
+    )
+    data = reader.read()
+    script = r"""
+const fs = require('fs'), vm = require('vm'), assert = require('assert');
+class Element {
+  constructor(tag) { this.tag=tag; this.children=[]; this.attrs={}; this.dataset={}; this.textContent=''; }
+  append(...items) { this.children.push(...items); }
+  replaceChildren(...items) { this.children=items; this.textContent=''; }
+  setAttribute(key,value) { this.attrs[key]=value; }
+  addEventListener() {}
+}
+const ids=Object.fromEntries(['result','affective-summary','relationship-state','mood-state','affective-note','emotions','emotion-note','affective-debug'].map(id=>['#'+id,new Element('div')]));
+const document={body:{dataset:{page:'/affective',login:true}},createElement:tag=>new Element(tag),querySelectorAll:s=>ids[s]?[ids[s]]:[],querySelector:s=>s==='#affective-summary, #relationship-state'?ids['#affective-summary']:ids[s]||null};
+const context={document,location:{hash:'',pathname:'/affective'},history:{replaceState(){}},console};
+vm.createContext(context); vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),context);
+context.data=JSON.parse(process.argv[2]); vm.runInContext('renderAffective(data)',context);
+function flatten(element) { return [element,...element.children.flatMap(flatten)]; }
+const elements=Object.values(ids).flatMap(flatten);
+assert(elements.some(e=>e.textContent==='熟人 · 相处放松'));
+assert(elements.some(e=>e.textContent==='关系边界：非恋爱关系'));
+assert(elements.some(e=>e.textContent.includes('<script>unsafe</script>')));
+assert(!elements.some(e=>e.tag==='script' || e.tag==='input' || e.tag==='form'));
+assert(elements.filter(e=>e.tag==='progress').length===9);
+assert(elements.some(e=>e.tag==='summary' && e.textContent==='展开原因摘要'));
+context.data.mood.dimensions[0]={key:'valence',label:'整体情绪',value:-1,position:0};
+vm.runInContext('renderAffective(data)',context);
+assert(flatten(ids['#mood-state']).some(e=>e.textContent==='-1.00'));
+assert(flatten(ids['#mood-state']).some(e=>e.tag==='progress' && e.value===0));
+context.data.relationship=null; context.data.mood=null; context.data.emotions=[]; context.data.active_emotions=[]; context.data.active_count=0;
+vm.runInContext('renderAffective(data)',context);
+assert(flatten(ids['#relationship-state']).some(e=>e.textContent==='暂未建立关系状态'));
+assert(flatten(ids['#emotion-note']).some(e=>e.textContent==='当前没有活跃情绪事件'));
+context.data.status='error'; context.data.message='状态读取失败';
+vm.runInContext('renderAffective(data)',context);
+assert(flatten(ids['#affective-summary']).some(e=>e.textContent==='状态读取失败'));
+console.log('Renderer: signed bars, text escaping, folded cause, empty/error states passed');
+"""
+    checked = subprocess.run(
+        [
+            node,
+            "-e",
+            script,
+            str(ASSETS / "setup.js"),
+            json.dumps(data, ensure_ascii=False),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=20,
+    )
+    assert checked.returncode == 0, checked.stderr

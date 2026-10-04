@@ -1,0 +1,29 @@
+<section class="card">
+<div class="section-heading">
+<h2>当前状态</h2>
+<button id="refresh-affective" class="secondary" type="button">刷新状态</button>
+</div>
+<p id="affective-note" class="muted" role="status">正在读取状态…</p>
+<p>此页面仅供观察。关系会随重要互动缓慢变化；心情与情绪按已有规则自然恢复。</p>
+</section>
+<div class="grid">
+<section class="card" aria-labelledby="relationship-heading">
+<h2 id="relationship-heading">关系</h2>
+<div id="relationship-state">暂未建立关系状态</div>
+</section>
+<section class="card" aria-labelledby="mood-heading">
+<h2 id="mood-heading">心情</h2>
+<div id="mood-state">暂未记录心情状态</div>
+<p class="muted">四维范围为 −1 至 +1，条形中线代表 0；数值随读取时间按原有规则恢复。</p>
+</section>
+</div>
+<section class="card" aria-labelledby="emotions-heading">
+<h2 id="emotions-heading">近期情绪</h2>
+<p id="emotion-note" class="muted">当前没有活跃情绪事件</p>
+<div id="emotions">暂无近期情绪记录</div>
+<p class="muted">最多显示存储中最近 12 条。过期事件可能已被 Core 清理，这里不是完整情绪历史。</p>
+</section>
+<details class="card">
+<summary>状态详情 / 调试信息（只读）</summary>
+<div id="affective-debug">暂无状态详情</div>
+</details>

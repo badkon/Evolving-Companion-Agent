@@ -9,7 +9,7 @@
 </div>
 </div>
 <nav aria-label="主导航">
-{% for group, paths in [('总览',['/']),('交流',['/chat','/media']),('角色',['/character','/memory']),('服务',['/models','/runtime']),('系统',['/system'])] %}
+{% for group, paths in [('总览',['/']),('交流',['/chat','/media']),('角色',['/character','/affective','/memory']),('服务',['/models','/runtime']),('系统',['/system'])] %}
 <p class="nav-group">{{ group }}</p>
 {% for path in paths %}
 <a href="{{ path }}" {% if path == page %}aria-current="page"{% endif %}>{{ pages[path] }}</a>

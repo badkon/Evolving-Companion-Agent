@@ -35,6 +35,7 @@ PAGES = {
     "/chat": "聊天管理",
     "/media": "表情与媒体",
     "/character": "角色配置",
+    "/affective": "情绪与关系",
     "/memory": "记忆管理",
     "/models": "模型与服务",
     "/runtime": "运行与日志",
@@ -118,6 +119,8 @@ def create_app(service: WebSetupService, token: str) -> Starlette:
                     data = await run_in_threadpool(service.snapshot)
                 elif action == "overview":
                     data = await run_in_threadpool(console.overview)
+                elif action == "affective":
+                    data = await run_in_threadpool(console.affective)
                 elif action == "memories":
                     data = await run_in_threadpool(
                         console.memories,
@@ -127,6 +130,12 @@ def create_app(service: WebSetupService, token: str) -> Starlette:
                 else:
                     return JSONResponse({"message": "未知操作。"}, status_code=404)
                 return JSONResponse(console.clean(data))
+            if request.path_params["action"] == "affective":
+                return JSONResponse(
+                    {"message": "情绪与关系页面仅支持只读查询。"},
+                    status_code=405,
+                    headers={"Allow": "GET"},
+                )
             if (
                 request.headers.get("content-type", "").split(";")[0]
                 != "application/json"

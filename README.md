@@ -65,7 +65,7 @@ B8 增加 [Lazy World Temporal Context](docs/b8_lazy_world_time_v01.md)：按访
 
 安装项目后，在项目根目录运行 `si`（或 `python -m evolving_companion.manager`）进入 [SI Manager v0.1](docs/si_manager_v01.md)：启动、停止、重启、状态、日志、配置、退出。Native 控制使用当前 Python 启动独立 server；退出 Manager 关闭临时 Web，不停止 Core。不控制 Docker/systemd，不提供更新、开机自启或崩溃监控。离线 headless 检查：`python scripts/run_si_manager_smoke.py`。升级本轮依赖后需重新 `pip install -e .`。
 
-Manager 配置启动带临时 token 的 loopback [SI Console](docs/si_console_v01.md)：首页、聊天、媒体空入口、角色、只读记忆、模型、运行与日志、数据与系统。复用原配置 / 连接测试 / Native 控制；`si setup` 保留终端 fallback。配置仍是 Git 忽略的 `config/si.env`，不另建设置数据库。保存不自动启动 Core，不回显密钥，也不改变身份 UUID。命令与安全边界见 [Runtime Operations](docs/runtime_operations.md)。离线检查：`python scripts/run_setup_smoke.py`、`python scripts/run_web_setup_smoke.py`（真实 loopback Console smoke）。
+Manager 配置启动带临时 token 的 loopback [SI Console](docs/si_console_v01.md)：首页、聊天、媒体空入口、角色、情绪与关系、只读记忆、模型、运行与日志、数据与系统。首页增加紧凑状态摘要；情绪与关系页只读展示已保存的主要对象关系、当前心情及近期情绪，手动刷新，不修改状态或调用 LLM。复用原配置 / 连接测试 / Native 控制；`si setup` 保留终端 fallback。配置仍是 Git 忽略的 `config/si.env`，不另建设置数据库。保存不自动启动 Core，不回显密钥，也不改变身份 UUID。命令与安全边界见 [Runtime Operations](docs/runtime_operations.md)。离线检查：`python scripts/run_setup_smoke.py`、`python scripts/run_web_setup_smoke.py`（真实 loopback Console smoke）。
 
 A5 已建立离线 QQ 私聊 Adapter Core：安全过滤后仅调用既有 Conversation 的 `send(text)`，角色回复原样返回；不登录 QQ、不启动 SnowLuma、不建立网络连接。设计与运行边界见 [A5 QQ Private Alpha](docs/a5_qq_private_alpha_v01.md)。完全离线检查：`python scripts/run_qq_adapter_smoke.py`。
 

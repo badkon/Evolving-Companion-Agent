@@ -3,8 +3,14 @@
 from contextlib import closing
 from dataclasses import asdict
 from importlib.metadata import version
+import logging
 import sqlite3
 
+from evolving_companion.affective_console import (
+    AffectiveConsoleService,
+    empty_affective,
+)
+from evolving_companion.character_data import load_character_seed_data
 from evolving_companion.config_env import redact
 from evolving_companion.manager_services import ManagerService
 from evolving_companion.ui_text import display_value
@@ -28,6 +34,21 @@ class ConsoleService:
             return item
 
         return visit(value)
+
+    def affective(self) -> dict:
+        try:
+            seed = load_character_seed_data(
+                self.manager.project / "data/characters/si_001.yaml"
+            )
+            result = AffectiveConsoleService(
+                self.manager.paths().database, seed.identity.internal_id
+            ).read()
+            return self.clean(result)
+        except Exception as error:
+            logging.getLogger(__name__).warning(
+                "affective_console_read_failed: %s", type(error).__name__
+            )
+            return empty_affective("状态读取失败；请稍后刷新。", status="error")
 
     def memories(self, query: str = "", offset: int = 0) -> dict:
         database = self.manager.paths().database
@@ -104,6 +125,7 @@ class ConsoleService:
             "activity": "暂无可读取的记忆记录。",
             "memory_count": "暂无数据",
             "today_messages": "暂无数据",
+            "affective": self.affective(),
         }
         if self.manager.effective().get("SI_CHAT_TRANSPORT") == "none":
             result["qq"] = "未启用（none）"

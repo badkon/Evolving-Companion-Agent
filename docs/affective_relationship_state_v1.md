@@ -133,7 +133,8 @@ git diff --check
 ```
 
 真实 QQ 行为仍需验收。语义误判 meaningful 的风险由小步长/cap 限制而非消除；
-baseline、衰减、阈值是工程规则，不是心理学标定。未实现 Console 状态面板。
+baseline、衰减、阈值是工程规则，不是心理学标定。Console 已增加首页摘要与只读
+“情绪与关系”详情页，展示层复用纯衰减/恢复计算，不写状态；见 [SI Console](si_console_v01.md)。
 
 本轮离线回归：pytest 585 passed、3 skipped；Ruff check/format、pip check、
 git diff --check 通过。22 个 smoke 全部正常退出，涵盖新 affective、自然对话、

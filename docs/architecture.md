@@ -33,7 +33,11 @@ A6.0：Memory → EmbeddingProvider → Semantic Retrieval → RerankerProvider 
 
 ## 1. 核心分层
 
-SI Console v0.1 将 Web Setup 重组为八个认证页面：总览、聊天、媒体空入口、角色、只读记忆、模型、运行与日志、数据与系统。复用现有 Starlette / Jinja / 原生 JS；内部 WebSetupServer / WebSetupService 名称保留。ConsoleService 仅做呈现和 SQLite `mode=ro` 查询；运行控制直接委托创建 Console 的同一个 ManagerService，沿用 NativeProcessController。无新 Core 初始化或 Memory/World 语义。入口 fragment token 换取临时 HttpOnly / SameSite=Strict cookie，多页导航不携带 URL token；cookie 写请求校验同源 Origin。详见 [SI Console](si_console_v01.md)。用户已报告上一版 Linux 安装/配置/API 测试/Core 控制通过；本轮 Console 与真实 QQ 私聊仍待验收。
+SI Console v0.1 将 Web Setup 重组为九个认证页面：总览、聊天、媒体空入口、角色、情绪与关系、只读记忆、模型、运行与日志、数据与系统。复用现有 Starlette / Jinja / 原生 JS；内部 WebSetupServer / WebSetupService 名称保留。ConsoleService 仅做呈现和 SQLite `mode=ro` 查询；运行控制直接委托创建 Console 的同一个 ManagerService，沿用 NativeProcessController。无新 Core 初始化或 Memory/World 语义。入口 fragment token 换取临时 HttpOnly / SameSite=Strict cookie，多页导航不携带 URL token；cookie 写请求校验同源 Origin。详见 [SI Console](si_console_v01.md)。用户已报告上一版 Linux 安装/配置/API 测试/Core 控制通过；本轮 Console 与真实 QQ 私聊仍待验收。
+
+情绪/关系 Console reader 按 Internal UUID 与已保存 primary target 只读查询，复用纯
+Mood recovery / Emotion decay 计算，不调用 AffectiveStore 的写入初始化或 snapshot。
+Dashboard 摘要与 `/affective` 详情页无新 LLM、schema、缓存或状态修改 API。
 
 Docker Deployment v1 仅提供 Runtime Host：Python 3.12 slim image 在 build 时按 pyproject.toml 安装无 extras 的项目，通过 server 入口运行 api/api。server 按 transport 分派：qq 沿用既有 QQ runtime；none 使用共享 Core 初始化后以 asyncio.Event 等待常驻，SIGINT/SIGTERM 时退出并经 ExitStack 清理资源，不启动 Transport、聊天输入或后台轮询。Compose 单服务绑定宿主机 config/data（只读）、runtime/backups（可写），不改变 Character 生命周期；Linux host networking 连接外部 OneBot（qq 时）。healthcheck 复用 offline health，不依赖 provider/transport 网络。详细边界见 [Docker Server Deployment](docker_server_deployment_v1.md)，未加入新业务 runtime、发布或自动更新机制。
 
